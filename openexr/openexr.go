@@ -379,18 +379,43 @@ func LoadOpenEXR(r bufio.Reader) (*OpenEXR, error) {
 	}, nil
 }
 
+func writeAttribute(w io.Writer, name string, typ string, value any) (uint64, error) {
+	var written uint64 = 0
+	var identifier []byte = []byte(name + "\x00" + typ + "\x00")
+	if err := binary.Write(w, binary.LittleEndian, identifier); err != nil {
+		return 0, err
+	}
+	written += uint64(binary.Size(identifier))
+
+	if err := binary.Write(w, binary.LittleEndian, uint32(binary.Size(value))); err != nil {
+		return 0, err
+	}
+	written += 4
+
+	if err := binary.Write(w, binary.LittleEndian, value); err != nil {
+		return 0, err
+	}
+	written += uint64(binary.Size(value))
+
+	return written, nil
+}
+
 func (exr *OpenEXR) Dump(w io.Writer) error {
+	var offset uint64 = 0
 	if err := binary.Write(w, binary.LittleEndian, EXR_MAGIC); err != nil {
 		return err
 	}
+	offset += uint64(binary.Size(EXR_MAGIC))
 
 	if err := binary.Write(w, binary.LittleEndian, uint32(2)); err != nil {
 		return err
 	}
+	offset += uint64(binary.Size(uint32(2)))
 
 	if err := binary.Write(w, binary.LittleEndian, []byte("channels\x00chlist\x00")); err != nil {
 		return err
 	}
+	offset += uint64(binary.Size([]byte("channels\x00chlist\x00")))
 
 	// Total size is null terminating byte plus length of names and their null bytes plus 16 times number of channels
 	channelListSize := uint32(1 + 17*len(exr.Channels))
@@ -401,6 +426,7 @@ func (exr *OpenEXR) Dump(w io.Writer) error {
 	if err := binary.Write(w, binary.LittleEndian, channelListSize); err != nil {
 		return err
 	}
+	offset += uint64(binary.Size(channelListSize))
 
 	for _, channel := range exr.Channels {
 		if err := binary.Write(w, binary.LittleEndian, []byte(channel.Name+"\x00")); err != nil {
@@ -426,89 +452,76 @@ func (exr *OpenEXR) Dump(w io.Writer) error {
 	if err := binary.Write(w, binary.LittleEndian, byte(0)); err != nil {
 		return err
 	}
+	offset += uint64(channelListSize)
 
-	if err := binary.Write(w, binary.LittleEndian, []byte("compression\x00compression\x00")); err != nil {
+	written, err := writeAttribute(w, "compression", "compression", exr.Compression)
+	if err != nil {
 		return err
 	}
+	offset += written
 
-	if err := binary.Write(w, binary.LittleEndian, uint32(binary.Size(exr.Compression))); err != nil {
+	written, err = writeAttribute(w, "dataWindow", "box2i", exr.DataWindow)
+	if err != nil {
 		return err
 	}
+	offset += written
 
-	if err := binary.Write(w, binary.LittleEndian, exr.Compression); err != nil {
+	written, err = writeAttribute(w, "displayWindow", "box2i", exr.DisplayWindow)
+	if err != nil {
 		return err
 	}
+	offset += written
 
-	if err := binary.Write(w, binary.LittleEndian, []byte("dataWindow\x00box2i\x00")); err != nil {
+	written, err = writeAttribute(w, "lineOrder", "lineOrder", exr.LineOrder)
+	if err != nil {
 		return err
 	}
+	offset += written
 
-	if err := binary.Write(w, binary.LittleEndian, uint32(binary.Size(exr.DataWindow))); err != nil {
+	written, err = writeAttribute(w, "pixelAspectRatio", "float", exr.PixelAspectRatio)
+	if err != nil {
 		return err
 	}
+	offset += written
 
-	if err := binary.Write(w, binary.LittleEndian, exr.DataWindow); err != nil {
+	written, err = writeAttribute(w, "screenWindowCenter", "v2f", exr.ScreenWindowCenter)
+	if err != nil {
 		return err
 	}
+	offset += written
 
-	if err := binary.Write(w, binary.LittleEndian, []byte("displayWindow\x00box2i\x00")); err != nil {
+	written, err = writeAttribute(w, "screenWindowWidth", "float", exr.ScreenWindowWidth)
+	if err != nil {
 		return err
 	}
+	offset += written
 
-	if err := binary.Write(w, binary.LittleEndian, uint32(binary.Size(exr.DisplayWindow))); err != nil {
+	if err := binary.Write(w, binary.LittleEndian, byte(0)); err != nil {
 		return err
 	}
+	offset += 1
 
-	if err := binary.Write(w, binary.LittleEndian, exr.DisplayWindow); err != nil {
-		return err
+	offset += uint64(len(exr.ScanLines) * 8)
+
+	for _, scanline := range exr.ScanLines {
+		if err := binary.Write(w, binary.LittleEndian, offset); err != nil {
+			return err
+		}
+		offset += uint64(8 + scanline.Size)
 	}
 
-	if err := binary.Write(w, binary.LittleEndian, []byte("lineOrder\x00lineOrder\x00")); err != nil {
-		return err
-	}
+	for _, scanline := range exr.ScanLines {
+		if err := binary.Write(w, binary.LittleEndian, scanline.YCoord); err != nil {
+			return err
+		}
 
-	if err := binary.Write(w, binary.LittleEndian, uint32(binary.Size(exr.LineOrder))); err != nil {
-		return err
-	}
+		if err := binary.Write(w, binary.LittleEndian, scanline.Size); err != nil {
+			return err
+		}
 
-	if err := binary.Write(w, binary.LittleEndian, exr.LineOrder); err != nil {
-		return err
-	}
-
-	if err := binary.Write(w, binary.LittleEndian, []byte("pixelAspectRatio\x00float\x00")); err != nil {
-		return err
-	}
-
-	if err := binary.Write(w, binary.LittleEndian, uint32(binary.Size(exr.PixelAspectRatio))); err != nil {
-		return err
-	}
-
-	if err := binary.Write(w, binary.LittleEndian, exr.PixelAspectRatio); err != nil {
-		return err
-	}
-
-	if err := binary.Write(w, binary.LittleEndian, []byte("screenWindowCenter\x00v2f\x00")); err != nil {
-		return err
-	}
-
-	if err := binary.Write(w, binary.LittleEndian, uint32(binary.Size(exr.ScreenWindowCenter))); err != nil {
-		return err
-	}
-
-	if err := binary.Write(w, binary.LittleEndian, exr.ScreenWindowCenter); err != nil {
-		return err
-	}
-
-	if err := binary.Write(w, binary.LittleEndian, []byte("screenWindowWidth\x00float\x00")); err != nil {
-		return err
-	}
-
-	if err := binary.Write(w, binary.LittleEndian, uint32(binary.Size(exr.ScreenWindowWidth))); err != nil {
-		return err
-	}
-
-	if err := binary.Write(w, binary.LittleEndian, exr.ScreenWindowWidth); err != nil {
-		return err
+		if err := binary.Write(w, binary.LittleEndian, scanline.Data); err != nil {
+			return err
+		}
 	}
 
 	return nil
