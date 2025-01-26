@@ -64,7 +64,9 @@ func run() {
 		},
 	)
 	imagePath := parser.String("p", "path", &argparse.Option{
-		Help: "Path to an EXR or HDR DDS image to load",
+		Positional: true,
+		Help:       "Path to an EXR or HDR DDS image to load",
+		Required:   false,
 	})
 
 	if err := parser.Parse(nil); err != nil {
@@ -83,22 +85,6 @@ func run() {
 	win, err := opengl.NewWindow(cfg)
 	if err != nil {
 		prt.Fatalf("%v", err)
-	}
-
-	var img image.Image
-	if imagePath != nil && len(*imagePath) > 0 {
-		img, err = loadImage(*imagePath)
-		if err != nil {
-			prt.Errorf("Loading image '%s': %v", *imagePath, err)
-			img = nil
-		}
-	}
-
-	var pic *pixel.PictureData
-	var sprite *pixel.Sprite
-	if img != nil {
-		pic = pixel.PictureDataFromImage(img)
-		sprite = pixel.NewSprite(pic, pic.Bounds())
 	}
 
 	clearColor := color.RGBA{
@@ -125,6 +111,25 @@ func run() {
 		viewedChannel hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
 		lastChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
 	)
+
+	var img image.Image
+	if imagePath != nil && len(*imagePath) > 0 {
+		img, err = loadImage(*imagePath)
+
+		if err != nil {
+			prt.Errorf("Loading image '%s': %v", *imagePath, err)
+			img = nil
+		} else {
+			lastChannel = hdrColors.GraySettingNone
+		}
+	}
+
+	var pic *pixel.PictureData
+	var sprite *pixel.Sprite
+	if img != nil {
+		pic = pixel.PictureDataFromImage(img)
+		sprite = pixel.NewSprite(pic, pic.Bounds())
+	}
 
 	if imagePath != nil {
 		fileName = *imagePath
