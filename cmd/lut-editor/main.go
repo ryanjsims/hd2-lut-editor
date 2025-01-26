@@ -285,7 +285,7 @@ func run() {
 			// Do nothing
 		}
 
-		imgui.Begin("Color")
+		imgui.BeginV("Color", nil, imgui.WindowFlagsAlwaysAutoResize)
 		{
 			format := fmt.Sprintf("%%.%df", precision)
 			imgui.ColorEdit4V("Color", &currColor, imgui.ColorEditFlagsFloat|imgui.ColorEditFlagsHDR|imgui.ColorEditFlagsNoInputs)
@@ -298,14 +298,14 @@ func run() {
 		}
 		imgui.End()
 
-		imgui.Begin("Viewed Channel(s)")
+		imgui.BeginV("Channel(s)", nil, imgui.WindowFlagsAlwaysAutoResize)
 		{
 			imgui.RadioButtonInt("RGB", (*int)(&viewedChannel), int(hdrColors.GraySettingNoAlpha))
 			imgui.RadioButtonInt("RGBA", (*int)(&viewedChannel), int(hdrColors.GraySettingNone))
 			imgui.RadioButtonInt("Red", (*int)(&viewedChannel), int(hdrColors.GraySettingRed))
 			imgui.RadioButtonInt("Green", (*int)(&viewedChannel), int(hdrColors.GraySettingBlue))
 			imgui.RadioButtonInt("Blue", (*int)(&viewedChannel), int(hdrColors.GraySettingGreen))
-			imgui.RadioButtonInt("Alpha", (*int)(&viewedChannel), int(hdrColors.GraySettingAlpha))
+			imgui.RadioButtonInt("Alpha   ", (*int)(&viewedChannel), int(hdrColors.GraySettingAlpha))
 		}
 		imgui.End()
 
