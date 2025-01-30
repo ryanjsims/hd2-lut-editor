@@ -210,28 +210,15 @@ func run() {
 			}
 			defer out.Close()
 			if filepath.Ext(fileName) == ".exr" {
-				exrOut, err := openexr.OpenEXRFromHDRImage(img)
-				if err != nil {
-					prt.Errorf("failed to convert img for saving: %v", err)
-					return
-				}
-				err = exrOut.Dump(out)
-				if err != nil {
-					prt.Errorf("failed to dump img to %s: %v", fileName, err)
-					return
-				}
+				err = openexr.WriteHDR(out, img)
 			} else if filepath.Ext(fileName) == ".dds" {
-				ddsImg, ok := img.(*dds.DDS)
-				if !ok {
-					prt.Errorf("failed to convert img to dds for saving: %v", err)
-				}
-				err := ddsImg.WriteHDR(out)
-				if err != nil {
-					prt.Errorf("failed to write img to %s: %v", fileName, err)
-					return
-				}
+				err = dds.WriteHDR(out, img)
 			} else {
 				prt.Errorf("only saving to .exr or .dds implemented currently")
+				return
+			}
+			if err != nil {
+				prt.Errorf("failed to write img to %s: %v", fileName, err)
 				return
 			}
 			saved = true

@@ -279,7 +279,91 @@ type DDS struct {
 	Images []*DDSImage
 }
 
-func (d *DDS) WriteHDR(w io.Writer) error {
+func WriteHDR(w io.Writer, hdrImg image.Image) error {
+	ddsImg, ok := hdrImg.(*DDS)
+	if ok {
+		return ddsImg.dump(w)
+	}
+
+	var dxgiFmt DXGIFormat
+	var pix []byte
+	switch hdrImg.ColorModel() {
+	case hdrColors.NRGBA128FModel:
+		dxgiFmt = DXGIFormatR32G32B32A32Float
+		img, ok := hdrImg.(*hdrColors.NRGBA128FImage)
+		if !ok {
+			return fmt.Errorf("failed to convert dds to NRGBA128F")
+		}
+		pix = img.Pix
+	case hdrColors.NRGBA128UModel:
+		dxgiFmt = DXGIFormatR32G32B32A32UInt
+		img, ok := hdrImg.(*hdrColors.NRGBA128UImage)
+		if !ok {
+			return fmt.Errorf("failed to convert dds to NRGBA128U")
+		}
+		pix = img.Pix
+	case hdrColors.NRGBA64FModel:
+		dxgiFmt = DXGIFormatR16G16B16A16Float
+		img, ok := hdrImg.(*hdrColors.NRGBA64FImage)
+		if !ok {
+			return fmt.Errorf("failed to convert dds to NRGBA64F")
+		}
+		pix = img.Pix
+	default:
+		return fmt.Errorf("image does not have an HDR color model")
+	}
+	info := Info{
+		Header: Header{
+			Size:              124,
+			Flags:             HeaderFlagCaps | HeaderFlagHeight | HeaderFlagWidth | HeaderFlagPixelFormat | HeaderFlagMipMapCount,
+			Width:             uint32(hdrImg.Bounds().Dx()),
+			Height:            uint32(hdrImg.Bounds().Dy()),
+			PitchOrLinearSize: 0,
+			Depth:             0,
+			MipMapCount:       1,
+			Reserved:          [11]uint32{0},
+			PixelFormat: PixelFormat{
+				Size:        32,
+				Flags:       PixelFormatFlagFourCC,
+				FourCC:      [4]byte{'D', 'X', '1', '0'},
+				RGBBitCount: 0,
+				RBitMask:    0,
+				GBitMask:    0,
+				BBitMask:    0,
+				ABitMask:    0,
+			},
+			Caps:      CapsFlag | CapsMipMap | CapsTexture,
+			Caps2:     0,
+			Caps3:     0,
+			Caps4:     0,
+			Reserved2: 0,
+		},
+		DXT10Header: &DXT10Header{
+			DXGIFormat:        dxgiFmt,
+			ResourceDimension: D3D10ResourceDimensionTexture2D,
+			MiscFlag:          0,
+			ArraySize:         1,
+			MiscFlags2:        0,
+		},
+	}
+
+	err := binary.Write(w, binary.LittleEndian, []byte("DDS "))
+	if err != nil {
+		return err
+	}
+	err = binary.Write(w, binary.LittleEndian, info.Header)
+	if err != nil {
+		return err
+	}
+	err = binary.Write(w, binary.LittleEndian, info.DXT10Header)
+	if err != nil {
+		return err
+	}
+	err = binary.Write(w, binary.LittleEndian, pix)
+	return err
+}
+
+func (d *DDS) dump(w io.Writer) error {
 	d.Info.Header.MipMapCount = 1
 	err := binary.Write(w, binary.LittleEndian, []byte("DDS "))
 	if err != nil {
@@ -295,26 +379,28 @@ func (d *DDS) WriteHDR(w io.Writer) error {
 			return err
 		}
 	}
+	var pix []byte
 	switch d.Info.ColorModel {
 	case hdrColors.NRGBA64FModel:
 		img, ok := d.Image.(*hdrColors.NRGBA64FImage)
 		if !ok {
 			return fmt.Errorf("failed to convert dds to NRGBA64F")
 		}
-		err = binary.Write(w, binary.LittleEndian, img.Pix)
+		pix = img.Pix
 	case hdrColors.NRGBA128FModel:
 		img, ok := d.Image.(*hdrColors.NRGBA128FImage)
 		if !ok {
 			return fmt.Errorf("failed to convert dds to NRGBA128F")
 		}
-		err = binary.Write(w, binary.LittleEndian, img.Pix)
+		pix = img.Pix
 	case hdrColors.NRGBA128UModel:
 		img, ok := d.Image.(*hdrColors.NRGBA128UImage)
 		if !ok {
 			return fmt.Errorf("failed to convert dds to NRGBA128U")
 		}
-		err = binary.Write(w, binary.LittleEndian, img.Pix)
+		pix = img.Pix
 	}
+	err = binary.Write(w, binary.LittleEndian, pix)
 	return err
 }
 

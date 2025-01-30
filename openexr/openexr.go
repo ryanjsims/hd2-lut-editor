@@ -616,7 +616,7 @@ func dumpAttributes(w io.Writer, exr *OpenEXR) error {
 	return nil
 }
 
-func (exr *OpenEXR) Dump(w io.WriteSeeker) error {
+func (exr *OpenEXR) dump(w io.WriteSeeker) error {
 	err := binary.Write(w, binary.LittleEndian, exr.Magic)
 	if err != nil {
 		return err
@@ -673,7 +673,7 @@ func (exr *OpenEXR) Dump(w io.WriteSeeker) error {
 	return nil
 }
 
-func OpenEXRFromHDRImage(img image.Image) (*OpenEXR, error) {
+func openEXRFromHDRImage(img image.Image) (*OpenEXR, error) {
 	var (
 		channels           []Channel   = make([]Channel, 4)
 		compression        Compression = CompressionZIP
@@ -822,153 +822,14 @@ func OpenEXRFromHDRImage(img image.Image) (*OpenEXR, error) {
 	}, nil
 }
 
-// func writeAttribute(w io.Writer, name string, typ string, value any) (uint64, error) {
-// 	var written uint64 = 0
-// 	var identifier []byte = []byte(name + "\x00" + typ + "\x00")
-// 	if err := binary.Write(w, binary.LittleEndian, identifier); err != nil {
-// 		return 0, err
-// 	}
-// 	written += uint64(binary.Size(identifier))
-
-// 	if err := binary.Write(w, binary.LittleEndian, uint32(binary.Size(value))); err != nil {
-// 		return 0, err
-// 	}
-// 	written += 4
-
-// 	if err := binary.Write(w, binary.LittleEndian, value); err != nil {
-// 		return 0, err
-// 	}
-// 	written += uint64(binary.Size(value))
-
-// 	return written, nil
-// }
-
-// func (exr *OpenEXR) Dump(w io.Writer) error {
-// 	var offset uint64 = 0
-// 	if err := binary.Write(w, binary.LittleEndian, EXR_MAGIC); err != nil {
-// 		return err
-// 	}
-// 	offset += uint64(binary.Size(EXR_MAGIC))
-
-// 	if err := binary.Write(w, binary.LittleEndian, uint32(2)); err != nil {
-// 		return err
-// 	}
-// 	offset += uint64(binary.Size(uint32(2)))
-
-// 	if err := binary.Write(w, binary.LittleEndian, []byte("channels\x00chlist\x00")); err != nil {
-// 		return err
-// 	}
-// 	offset += uint64(binary.Size([]byte("channels\x00chlist\x00")))
-
-// 	// Total size is null terminating byte plus length of names and their null bytes plus 16 times number of channels
-// 	channelListSize := uint32(1 + 17*len(exr.Channels))
-// 	for _, channel := range exr.Channels {
-// 		channelListSize += uint32(len(channel.Name))
-// 	}
-
-// 	if err := binary.Write(w, binary.LittleEndian, channelListSize); err != nil {
-// 		return err
-// 	}
-// 	offset += uint64(binary.Size(channelListSize))
-
-// 	for _, channel := range exr.Channels {
-// 		if err := binary.Write(w, binary.LittleEndian, []byte(channel.Name+"\x00")); err != nil {
-// 			return err
-// 		}
-
-// 		if err := binary.Write(w, binary.LittleEndian, channel.PixelFmt); err != nil {
-// 			return err
-// 		}
-
-// 		if err := binary.Write(w, binary.LittleEndian, channel.Linear); err != nil {
-// 			return err
-// 		}
-
-// 		if err := binary.Write(w, binary.LittleEndian, channel.XSampling); err != nil {
-// 			return err
-// 		}
-
-// 		if err := binary.Write(w, binary.LittleEndian, channel.YSampling); err != nil {
-// 			return err
-// 		}
-// 	}
-// 	if err := binary.Write(w, binary.LittleEndian, byte(0)); err != nil {
-// 		return err
-// 	}
-// 	offset += uint64(channelListSize)
-
-// 	written, err := writeAttribute(w, "compression", "compression", exr.Compression)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	offset += written
-
-// 	written, err = writeAttribute(w, "dataWindow", "box2i", exr.DataWindow)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	offset += written
-
-// 	written, err = writeAttribute(w, "displayWindow", "box2i", exr.DisplayWindow)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	offset += written
-
-// 	written, err = writeAttribute(w, "lineOrder", "lineOrder", exr.LineOrder)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	offset += written
-
-// 	written, err = writeAttribute(w, "pixelAspectRatio", "float", exr.PixelAspectRatio)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	offset += written
-
-// 	written, err = writeAttribute(w, "screenWindowCenter", "v2f", exr.ScreenWindowCenter)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	offset += written
-
-// 	written, err = writeAttribute(w, "screenWindowWidth", "float", exr.ScreenWindowWidth)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	offset += written
-
-// 	if err := binary.Write(w, binary.LittleEndian, byte(0)); err != nil {
-// 		return err
-// 	}
-// 	offset += 1
-
-// 	offset += uint64(len(exr.ScanLines) * 8)
-
-// 	for _, scanline := range exr.ScanLines {
-// 		if err := binary.Write(w, binary.LittleEndian, offset); err != nil {
-// 			return err
-// 		}
-// 		offset += uint64(8 + scanline.Size)
-// 	}
-
-// 	for _, scanline := range exr.ScanLines {
-// 		if err := binary.Write(w, binary.LittleEndian, scanline.YCoord); err != nil {
-// 			return err
-// 		}
-
-// 		if err := binary.Write(w, binary.LittleEndian, scanline.Size); err != nil {
-// 			return err
-// 		}
-
-// 		if err := binary.Write(w, binary.LittleEndian, scanline.Data); err != nil {
-// 			return err
-// 		}
-// 	}
-
-// 	return nil
-// }
+func WriteHDR(w io.WriteSeeker, img image.Image) error {
+	exr, err := openEXRFromHDRImage(img)
+	if err != nil {
+		return err
+	}
+	err = exr.dump(w)
+	return err
+}
 
 func reconstruct(data []byte) []byte {
 	output := make([]byte, len(data))
