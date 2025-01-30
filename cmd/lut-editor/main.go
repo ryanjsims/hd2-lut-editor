@@ -377,35 +377,9 @@ func (st *newImageStateMachine) handleNewImageStateMachine(win *opengl.Window, i
 		}
 		return
 	case newImageStateSettings:
-		var resp dialogResponse = dialogResponseNone
 		//var model color.Model
 		centerWindow(win, windowSize)
-		imgui.BeginV("New file settings", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoCollapse)
-		imgui.InputInt("Width", &st.Width)
-		imgui.InputInt("Height", &st.Height)
-		imgui.RadioButtonInt("Float", &st.ModelIndex, 0)
-		imgui.SameLine()
-		imgui.RadioButtonInt("Half", &st.ModelIndex, 1)
-		buttonSize := imgui.Vec2{
-			X: windowSize.X * 0.3,
-			Y: windowSize.Y * 0.2,
-		}
-		imgui.SetCursorPos(imgui.Vec2{
-			X: imgui.CursorPosX(),
-			Y: windowSize.Y * .75,
-		})
-		if imgui.ButtonV("OK", buttonSize) {
-			resp = dialogResponseConfirm
-		}
-		imgui.SameLine()
-		imgui.SetCursorPos(imgui.Vec2{
-			X: windowSize.X * 0.65,
-			Y: imgui.CursorPosY(),
-		})
-		if imgui.ButtonV("Cancel", buttonSize) {
-			resp = dialogResponseDeny
-		}
-		imgui.End()
+		resp := newImageDialog(st, windowSize)
 		st.Width = max(st.Width, 1)
 		st.Height = max(st.Height, 1)
 		if resp == dialogResponseNone {
@@ -642,6 +616,37 @@ func confirmationDialog(win *opengl.Window, windowSize imgui.Vec2, text, title, 
 	}
 	imgui.End()
 	return response
+}
+
+func newImageDialog(st *newImageStateMachine, windowSize imgui.Vec2) dialogResponse {
+	var resp dialogResponse = dialogResponseNone
+	imgui.BeginV("New file settings", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoCollapse)
+	imgui.InputInt("Width", &st.Width)
+	imgui.InputInt("Height", &st.Height)
+	imgui.RadioButtonInt("Float", &st.ModelIndex, 0)
+	imgui.SameLine()
+	imgui.RadioButtonInt("Half", &st.ModelIndex, 1)
+	buttonSize := imgui.Vec2{
+		X: windowSize.X * 0.3,
+		Y: windowSize.Y * 0.2,
+	}
+	imgui.SetCursorPos(imgui.Vec2{
+		X: imgui.CursorPosX(),
+		Y: windowSize.Y * .75,
+	})
+	if imgui.ButtonV("OK", buttonSize) {
+		resp = dialogResponseConfirm
+	}
+	imgui.SameLine()
+	imgui.SetCursorPos(imgui.Vec2{
+		X: windowSize.X * 0.65,
+		Y: imgui.CursorPosY(),
+	})
+	if imgui.ButtonV("Cancel", buttonSize) {
+		resp = dialogResponseDeny
+	}
+	imgui.End()
+	return resp
 }
 
 func showMainMenuBar(img image.Image) menuResponse {
