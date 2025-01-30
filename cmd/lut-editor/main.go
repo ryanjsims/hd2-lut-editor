@@ -227,7 +227,7 @@ func run() {
 		}
 
 		saveFile := func() {
-			out, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, os.ModeType)
+			out, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, os.ModePerm)
 			if err != nil {
 				prt.Errorf("failed to save: %v", err)
 				return
