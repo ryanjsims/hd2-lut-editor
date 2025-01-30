@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -46,6 +47,21 @@ const (
 	dialogResponseConfirm dialogResponse = 1
 	dialogResponseDeny    dialogResponse = 2
 )
+
+type newImageState uint8
+
+const (
+	newImageStateNone     newImageState = 0
+	newImageStateConfirm  newImageState = 1
+	newImageStateSettings newImageState = 2
+)
+
+type newImageStateMachine struct {
+	State      newImageState
+	Width      int32
+	Height     int32
+	ModelIndex int
+}
 
 const baseTitle string = "Helldiver 2 LUT Editor"
 
@@ -110,7 +126,15 @@ func run() {
 		response      menuResponse          = menuResponseNone
 		viewedChannel hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
 		lastChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
+		smNewImage    newImageStateMachine
 	)
+
+	smNewImage = newImageStateMachine{
+		State:      newImageStateNone,
+		Width:      23,
+		Height:     8,
+		ModelIndex: 0,
+	}
 
 	var img image.Image
 	if imagePath != nil && len(*imagePath) > 0 {
@@ -197,17 +221,18 @@ func run() {
 			sprite.Draw(win, pixel.IM)
 		}
 
-		nextResponse := showMainMenuBar()
+		nextResponse := showMainMenuBar(img)
 		if nextResponse != menuResponseNone {
 			response = nextResponse
 		}
 
 		saveFile := func() {
-			out, err := os.OpenFile(fileName, os.O_CREATE, os.ModeType)
+			out, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, os.ModeType)
 			if err != nil {
 				prt.Errorf("failed to save: %v", err)
 				return
 			}
+
 			defer out.Close()
 			if filepath.Ext(fileName) == ".exr" {
 				err = openexr.WriteHDR(out, img)
@@ -221,25 +246,43 @@ func run() {
 				prt.Errorf("failed to write img to %s: %v", fileName, err)
 				return
 			}
+			length, err := out.Seek(0, io.SeekCurrent)
+			if err == nil {
+				out.Truncate(length)
+			}
 			saved = true
+		}
+
+		saveFileAs := func() {
+			nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Save()
+			if err == dialog.ErrCancelled {
+				return
+			} else if err != nil {
+				prt.Errorf("%v", err)
+				return
+			}
+			fileName = nextFileName
+			saveFile()
 		}
 
 		switch response {
 		case menuResponseImageNew:
-			resp := confirmationDialog(win, "Create new file?", "New File", "Confirm", "Cancel")
-			if resp == dialogResponseNone {
-				break
+			if smNewImage.State == newImageStateNone && len(fileName) != 0 {
+				smNewImage.State = newImageStateConfirm
+			} else if smNewImage.State == newImageStateNone {
+				smNewImage.State = newImageStateSettings
 			}
-			response = menuResponseNone
-			if resp == dialogResponseConfirm {
-				img = hdrColors.NewNRGBA128FImage(img.Bounds())
-				refreshSprite = true
-				saved = false
-				fileName = "(new)"
+			smNewImage.handleNewImageStateMachine(win, &img, &refreshSprite, &saved, &fileName, &lastChannel)
+			if smNewImage.State == newImageStateNone {
+				response = menuResponseNone
 			}
 		case menuResponseImageSave:
 			response = menuResponseNone
-			go saveFile()
+			if fileName == "(new)" || len(fileName) == 0 {
+				go saveFileAs()
+			} else {
+				go saveFile()
+			}
 		case menuResponseImageOpen:
 			go func() {
 				nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Load()
@@ -261,18 +304,8 @@ func run() {
 			}()
 			response = menuResponseNone
 		case menuResponseImageSaveAs:
-			go func() {
-				nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Save()
-				if err == dialog.ErrCancelled {
-					return
-				} else if err != nil {
-					prt.Errorf("%v", err)
-					return
-				}
-				fileName = nextFileName
-				saveFile()
-			}()
 			response = menuResponseNone
+			go saveFileAs()
 		default:
 			// Do nothing
 		}
@@ -323,6 +356,74 @@ func run() {
 		camZoom *= math.Pow(camZoomSpeed, ui.MouseScroll().Y)
 
 		win.Update()
+	}
+}
+
+func (st *newImageStateMachine) handleNewImageStateMachine(win *opengl.Window, img *image.Image, refreshSprite *bool, saved *bool, fileName *string, lastChannel *hdrColors.GraySetting) {
+	windowSize := imgui.Vec2{
+		X: 0.2 * float32(win.Bounds().W()),
+		Y: 0.2 * float32(win.Bounds().H()),
+	}
+	switch st.State {
+	case newImageStateConfirm:
+		centerWindow(win, windowSize)
+		resp := confirmationDialog(win, windowSize, "Create new file?", "New File", "Confirm", "Cancel")
+		switch resp {
+		case dialogResponseDeny:
+			st.State = newImageStateNone
+		case dialogResponseConfirm:
+			st.State = newImageStateSettings
+		default:
+		}
+		return
+	case newImageStateSettings:
+		var resp dialogResponse = dialogResponseNone
+		//var model color.Model
+		centerWindow(win, windowSize)
+		imgui.BeginV("New file settings", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoCollapse)
+		imgui.InputInt("Width", &st.Width)
+		imgui.InputInt("Height", &st.Height)
+		imgui.RadioButtonInt("Float", &st.ModelIndex, 0)
+		imgui.SameLine()
+		imgui.RadioButtonInt("Half", &st.ModelIndex, 1)
+		buttonSize := imgui.Vec2{
+			X: windowSize.X * 0.3,
+			Y: windowSize.Y * 0.2,
+		}
+		imgui.SetCursorPos(imgui.Vec2{
+			X: imgui.CursorPosX(),
+			Y: windowSize.Y * .75,
+		})
+		if imgui.ButtonV("OK", buttonSize) {
+			resp = dialogResponseConfirm
+		}
+		imgui.SameLine()
+		imgui.SetCursorPos(imgui.Vec2{
+			X: windowSize.X * 0.65,
+			Y: imgui.CursorPosY(),
+		})
+		if imgui.ButtonV("Cancel", buttonSize) {
+			resp = dialogResponseDeny
+		}
+		imgui.End()
+		st.Width = max(st.Width, 1)
+		st.Height = max(st.Height, 1)
+		if resp == dialogResponseNone {
+			return
+		}
+		if resp == dialogResponseConfirm {
+			switch st.ModelIndex {
+			case 0:
+				*img = hdrColors.NewNRGBA128FImage(image.Rect(0, 0, int(st.Width), int(st.Height)))
+			case 1:
+				*img = hdrColors.NewNRGBA64FImage(image.Rect(0, 0, int(st.Width), int(st.Height)))
+			}
+			*refreshSprite = true
+			*saved = false
+			*fileName = "(new)"
+			*lastChannel = hdrColors.GraySettingNone
+		}
+		st.State = newImageStateNone
 	}
 }
 
@@ -501,32 +602,31 @@ func hdrColorToFloats(prt *app.Printer, pxColor color.Color, colorModel color.Mo
 	return color
 }
 
-func confirmationDialog(win *opengl.Window, text, title, confirm, deny string) dialogResponse {
-	response := dialogResponseNone
-	popupSize := imgui.Vec2{
-		X: 0.2 * float32(win.Bounds().W()),
-		Y: 0.2 * float32(win.Bounds().H()),
-	}
+func centerWindow(win *opengl.Window, windowSize imgui.Vec2) {
 	imgui.SetNextWindowPos(imgui.Vec2{
-		X: 0.5 * (float32(win.Bounds().W()) - popupSize.X),
-		Y: 0.5 * (float32(win.Bounds().H()) - popupSize.Y),
+		X: 0.5 * (float32(win.Bounds().W()) - windowSize.X),
+		Y: 0.5 * (float32(win.Bounds().H()) - windowSize.Y),
 	})
-	imgui.SetNextWindowSize(popupSize)
+	imgui.SetNextWindowSize(windowSize)
+}
+
+func confirmationDialog(win *opengl.Window, windowSize imgui.Vec2, text, title, confirm, deny string) dialogResponse {
+	response := dialogResponseNone
 	imgui.BeginV(title, nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoCollapse)
 
 	imgui.SetCursorPos(imgui.Vec2{
 		X: imgui.CursorPosX(),
-		Y: popupSize.Y * .33,
+		Y: windowSize.Y * .33,
 	})
 	textCentered(text)
 	imgui.SetCursorPos(imgui.Vec2{
 		X: imgui.CursorPosX(),
-		Y: popupSize.Y * .75,
+		Y: windowSize.Y * .75,
 	})
 
 	buttonSize := imgui.Vec2{
-		X: popupSize.X * 0.3,
-		Y: popupSize.Y * 0.2,
+		X: windowSize.X * 0.3,
+		Y: windowSize.Y * 0.2,
 	}
 
 	if imgui.ButtonV(confirm, buttonSize) {
@@ -534,7 +634,7 @@ func confirmationDialog(win *opengl.Window, text, title, confirm, deny string) d
 	}
 	imgui.SameLine()
 	imgui.SetCursorPos(imgui.Vec2{
-		X: popupSize.X * 0.65,
+		X: windowSize.X * 0.65,
 		Y: imgui.CursorPosY(),
 	})
 	if imgui.ButtonV(deny, buttonSize) {
@@ -544,11 +644,11 @@ func confirmationDialog(win *opengl.Window, text, title, confirm, deny string) d
 	return response
 }
 
-func showMainMenuBar() menuResponse {
+func showMainMenuBar(img image.Image) menuResponse {
 	response := menuResponseNone
 	if imgui.BeginMainMenuBar() {
 		if imgui.BeginMenu("File") {
-			response = showFileMenu()
+			response = showFileMenu(img)
 			imgui.EndMenu()
 		}
 		imgui.EndMainMenuBar()
@@ -556,7 +656,7 @@ func showMainMenuBar() menuResponse {
 	return response
 }
 
-func showFileMenu() menuResponse {
+func showFileMenu(img image.Image) menuResponse {
 	response := menuResponseNone
 	if imgui.MenuItem("New") {
 		response = menuResponseImageNew
@@ -564,10 +664,10 @@ func showFileMenu() menuResponse {
 	if imgui.MenuItem("Open...") {
 		response = menuResponseImageOpen
 	}
-	if imgui.MenuItem("Save") {
+	if imgui.MenuItemV("Save", "", false, img != nil) {
 		response = menuResponseImageSave
 	}
-	if imgui.MenuItem("Save As...") {
+	if imgui.MenuItemV("Save As...", "", false, img != nil) {
 		response = menuResponseImageSaveAs
 	}
 	return response
