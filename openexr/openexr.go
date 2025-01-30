@@ -770,7 +770,7 @@ func openEXRFromHDRImage(img image.Image) (*OpenEXR, error) {
 	}
 
 	var scanlines []ScanLine = make([]ScanLine, 0, 1)
-	uncompressedSize := uint32(compression.LineCount()) * dataWindow.Width() * uint32(pixelFmt.Size()) * uint32(len(channels))
+	uncompressedSize := min(uint32(compression.LineCount()), dataWindow.Height()) * dataWindow.Width() * uint32(pixelFmt.Size()) * uint32(len(channels))
 	scanline := ScanLine{
 		YCoord:     0,
 		Size:       uncompressedSize,
@@ -791,6 +791,7 @@ func openEXRFromHDRImage(img image.Image) (*OpenEXR, error) {
 		}
 
 		if uint32(row) == scanline.YCoord+scanline.LineCount-1 && row < int(dataWindow.Height())-1 {
+			uncompressedSize := min(uint32(compression.LineCount()), dataWindow.Height()-uint32(row)) * dataWindow.Width() * uint32(pixelFmt.Size()) * uint32(len(channels))
 			scanlines = append(scanlines, scanline)
 			scanline = ScanLine{
 				YCoord:     uint32(row + 1),
