@@ -56,11 +56,34 @@ const (
 	newImageStateSettings newImageState = 2
 )
 
-type newImageStateMachine struct {
-	State      newImageState
-	Width      int32
-	Height     int32
-	ModelIndex int
+type newImageSM struct {
+	State         newImageState
+	Width         int32
+	Height        int32
+	ModelIndex    int
+	win           *opengl.Window
+	img           *image.Image
+	refreshSprite *bool
+	saved         *bool
+	fileName      *string
+	lastChannel   *hdrColors.GraySetting
+}
+
+type saveAsImageState uint8
+
+const (
+	saveAsImageStateNone     saveAsImageState = 0
+	saveAsImageStateConfirm  saveAsImageState = 1
+	saveAsImageStateGetFile  saveAsImageState = 2
+	saveAsImageStateChoosing saveAsImageState = 3
+)
+
+type saveAsImageSM struct {
+	State    saveAsImageState
+	fileName *string
+	img      *image.Image
+	saved    *bool
+	logger   *app.Printer
 }
 
 const baseTitle string = "Helldiver 2 LUT Editor"
@@ -114,27 +137,21 @@ func run() {
 	ui := pixelui.New(win, &Atlas, 0)
 
 	var (
-		camPos                              = pixel.ZV
-		camZoom                             = 24.0
-		camZoomSpeed                        = 1.05
-		dragStart                           = pixel.ZV
-		currColor                           = [4]float32{0.0, 0.0, 0.0, 0.0}
-		precision     int32                 = 3
-		fileName      string                = ""
-		saved         bool                  = true
-		refreshSprite bool                  = false
-		response      menuResponse          = menuResponseNone
-		viewedChannel hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
-		lastChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
-		smNewImage    newImageStateMachine
+		camPos                                        = pixel.ZV
+		camZoom                                       = 24.0
+		camZoomSpeed                                  = 1.05
+		dragStart                                     = pixel.ZV
+		currColor                                     = [4]float32{0.0, 0.0, 0.0, 0.0}
+		precision               int32                 = 3
+		fileName                string                = ""
+		saved                   bool                  = true
+		refreshSprite           bool                  = false
+		response                menuResponse          = menuResponseNone
+		viewedChannel           hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
+		lastChannel             hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
+		createImageStateMachine newImageSM
+		saveAsImageStateMachine saveAsImageSM
 	)
-
-	smNewImage = newImageStateMachine{
-		State:      newImageStateNone,
-		Width:      23,
-		Height:     8,
-		ModelIndex: 0,
-	}
 
 	var img image.Image
 	if imagePath != nil && len(*imagePath) > 0 {
@@ -146,6 +163,27 @@ func run() {
 		} else {
 			lastChannel = hdrColors.GraySettingNone
 		}
+	}
+
+	createImageStateMachine = newImageSM{
+		State:         newImageStateNone,
+		Width:         23,
+		Height:        8,
+		ModelIndex:    0,
+		win:           win,
+		img:           &img,
+		refreshSprite: &refreshSprite,
+		saved:         &saved,
+		fileName:      &fileName,
+		lastChannel:   &lastChannel,
+	}
+
+	saveAsImageStateMachine = saveAsImageSM{
+		State:    saveAsImageStateNone,
+		fileName: &fileName,
+		img:      &img,
+		saved:    &saved,
+		logger:   prt,
 	}
 
 	var pic *pixel.PictureData
@@ -226,62 +264,24 @@ func run() {
 			response = nextResponse
 		}
 
-		saveFile := func() {
-			out, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				prt.Errorf("failed to save: %v", err)
-				return
-			}
-
-			defer out.Close()
-			if filepath.Ext(fileName) == ".exr" {
-				err = openexr.WriteHDR(out, img)
-			} else if filepath.Ext(fileName) == ".dds" {
-				err = dds.WriteHDR(out, img)
-			} else {
-				prt.Errorf("only saving to .exr or .dds implemented currently")
-				return
-			}
-			if err != nil {
-				prt.Errorf("failed to write img to %s: %v", fileName, err)
-				return
-			}
-			length, err := out.Seek(0, io.SeekCurrent)
-			if err == nil {
-				out.Truncate(length)
-			}
-			saved = true
-		}
-
-		saveFileAs := func() {
-			nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Save()
-			if err == dialog.ErrCancelled {
-				return
-			} else if err != nil {
-				prt.Errorf("%v", err)
-				return
-			}
-			fileName = nextFileName
-			saveFile()
-		}
-
 		switch response {
 		case menuResponseImageNew:
-			if smNewImage.State == newImageStateNone && len(fileName) != 0 {
-				smNewImage.State = newImageStateConfirm
-			} else if smNewImage.State == newImageStateNone {
-				smNewImage.State = newImageStateSettings
+			if createImageStateMachine.State == newImageStateNone && len(fileName) != 0 {
+				createImageStateMachine.State = newImageStateConfirm
+			} else if createImageStateMachine.State == newImageStateNone {
+				createImageStateMachine.State = newImageStateSettings
 			}
-			smNewImage.handleNewImageStateMachine(win, &img, &refreshSprite, &saved, &fileName, &lastChannel)
-			if smNewImage.State == newImageStateNone {
+			createImageStateMachine.step()
+			if createImageStateMachine.State == newImageStateNone {
 				response = menuResponseNone
 			}
 		case menuResponseImageSave:
 			response = menuResponseNone
 			if fileName == "(new)" || len(fileName) == 0 {
-				go saveFileAs()
-			} else {
-				go saveFile()
+				response = menuResponseImageSaveAs
+			} else if saveAsImageStateMachine.State == saveAsImageStateNone {
+				saveAsImageStateMachine.State = saveAsImageStateConfirm
+				go saveAsImageStateMachine.step()
 			}
 		case menuResponseImageOpen:
 			go func() {
@@ -304,8 +304,15 @@ func run() {
 			}()
 			response = menuResponseNone
 		case menuResponseImageSaveAs:
-			response = menuResponseNone
-			go saveFileAs()
+			if saveAsImageStateMachine.State == saveAsImageStateNone {
+				saveAsImageStateMachine.State = saveAsImageStateGetFile
+			}
+			if saveAsImageStateMachine.State != saveAsImageStateChoosing {
+				saveAsImageStateMachine.step()
+			}
+			if saveAsImageStateMachine.State == saveAsImageStateNone {
+				response = menuResponseNone
+			}
 		default:
 			// Do nothing
 		}
@@ -359,15 +366,15 @@ func run() {
 	}
 }
 
-func (st *newImageStateMachine) handleNewImageStateMachine(win *opengl.Window, img *image.Image, refreshSprite *bool, saved *bool, fileName *string, lastChannel *hdrColors.GraySetting) {
+func (st *newImageSM) step() {
 	windowSize := imgui.Vec2{
-		X: 0.2 * float32(win.Bounds().W()),
-		Y: 0.2 * float32(win.Bounds().H()),
+		X: 0.2 * float32(st.win.Bounds().W()),
+		Y: 0.2 * float32(st.win.Bounds().H()),
 	}
 	switch st.State {
 	case newImageStateConfirm:
-		centerWindow(win, windowSize)
-		resp := confirmationDialog(win, windowSize, "Create new file?", "New File", "Confirm", "Cancel")
+		centerWindow(st.win, windowSize)
+		resp := confirmationDialog(st.win, windowSize, "Create new file?", "New File", "Confirm", "Cancel")
 		switch resp {
 		case dialogResponseDeny:
 			st.State = newImageStateNone
@@ -378,7 +385,7 @@ func (st *newImageStateMachine) handleNewImageStateMachine(win *opengl.Window, i
 		return
 	case newImageStateSettings:
 		//var model color.Model
-		centerWindow(win, windowSize)
+		centerWindow(st.win, windowSize)
 		resp := newImageDialog(st, windowSize)
 		st.Width = max(st.Width, 1)
 		st.Height = max(st.Height, 1)
@@ -388,16 +395,60 @@ func (st *newImageStateMachine) handleNewImageStateMachine(win *opengl.Window, i
 		if resp == dialogResponseConfirm {
 			switch st.ModelIndex {
 			case 0:
-				*img = hdrColors.NewNRGBA128FImage(image.Rect(0, 0, int(st.Width), int(st.Height)))
+				*st.img = hdrColors.NewNRGBA128FImage(image.Rect(0, 0, int(st.Width), int(st.Height)))
 			case 1:
-				*img = hdrColors.NewNRGBA64FImage(image.Rect(0, 0, int(st.Width), int(st.Height)))
+				*st.img = hdrColors.NewNRGBA64FImage(image.Rect(0, 0, int(st.Width), int(st.Height)))
 			}
-			*refreshSprite = true
-			*saved = false
-			*fileName = "(new)"
-			*lastChannel = hdrColors.GraySettingNone
+			*st.refreshSprite = true
+			*st.saved = false
+			*st.fileName = "(new)"
+			*st.lastChannel = hdrColors.GraySettingNone
 		}
 		st.State = newImageStateNone
+	}
+}
+
+func (sm *saveAsImageSM) step() {
+	switch sm.State {
+	case saveAsImageStateConfirm:
+		sm.State = saveAsImageStateNone
+		out, err := os.OpenFile(*sm.fileName, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			sm.logger.Errorf("failed to save: %v", err)
+			return
+		}
+
+		defer out.Close()
+		if filepath.Ext(*sm.fileName) == ".exr" {
+			err = openexr.WriteHDR(out, *sm.img)
+		} else if filepath.Ext(*sm.fileName) == ".dds" {
+			err = dds.WriteHDR(out, *sm.img)
+		} else {
+			sm.logger.Errorf("only saving to .exr or .dds implemented currently")
+			return
+		}
+		if err != nil {
+			sm.logger.Errorf("failed to write img to %s: %v", *sm.fileName, err)
+			return
+		}
+		length, err := out.Seek(0, io.SeekCurrent)
+		if err == nil {
+			out.Truncate(length)
+		}
+		*sm.saved = true
+	case saveAsImageStateGetFile:
+		sm.State = saveAsImageStateChoosing
+		go func() {
+			nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Save()
+			if err == dialog.ErrCancelled {
+				sm.State = saveAsImageStateNone
+			} else if err != nil {
+				sm.logger.Errorf("%v", err)
+				sm.State = saveAsImageStateNone
+			}
+			*sm.fileName = nextFileName
+			sm.State = saveAsImageStateConfirm
+		}()
 	}
 }
 
@@ -618,7 +669,7 @@ func confirmationDialog(win *opengl.Window, windowSize imgui.Vec2, text, title, 
 	return response
 }
 
-func newImageDialog(st *newImageStateMachine, windowSize imgui.Vec2) dialogResponse {
+func newImageDialog(st *newImageSM, windowSize imgui.Vec2) dialogResponse {
 	var resp dialogResponse = dialogResponseNone
 	imgui.BeginV("New file settings", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoCollapse)
 	imgui.InputInt("Width", &st.Width)
