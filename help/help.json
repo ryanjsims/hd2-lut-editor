@@ -1,0 +1,607 @@
+{
+    "PrimaryLUT": {
+        "Width": {
+            "Min": 23,
+            "Max": 23
+        },
+        "Height": {
+            "Min": 1,
+            "Max": 8
+        },
+        "Rows": [
+            {
+                "Image": "ID Mask",
+                "Layer": 0,
+                "Channel": "Red"
+            },
+            {
+                "Image": "ID Mask",
+                "Layer": 0,
+                "Channel": "Green"
+            },
+            {
+                "Image": "ID Mask",
+                "Layer": 0,
+                "Channel": "Blue"
+            },
+            {
+                "Image": "ID Mask",
+                "Layer": 0,
+                "Channel": "Alpha"
+            },
+            {
+                "Image": "ID Mask",
+                "Layer": 1,
+                "Channel": "Red"
+            },
+            {
+                "Image": "ID Mask",
+                "Layer": 1,
+                "Channel": "Green"
+            },
+            {
+                "Image": "ID Mask",
+                "Layer": 1,
+                "Channel": "Blue"
+            },
+            {
+                "Image": "ID Mask",
+                "Layer": 1,
+                "Channel": "Alpha"
+            }
+        ],
+        "Columns": [
+            {
+                "Description": "Albedo",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Albedo blue channel"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Map Intensities",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 25
+                    },
+                    "Description": "Bump Map Value"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Depth Intensity"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Column 3 Intensity"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Bump Map Color",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Bump Map Red"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Bump Map Green"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Bump Map Blue"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Mask and Bump Map Transparency controls",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Mask 1"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Mask 2"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Bump Map Transparency"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Bump Map Curvature",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Bump Map Curvature Blur Intensity"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Bump Map Curvature X-Axis Scaling"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Bump Map Curvature Y-Axis Scaling"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Bump Map Color 2 and Metallic",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Bump Map Red"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Bump Map Green"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Bump Map Blue"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Metallic"
+                }
+            },
+            {
+                "Description": "Bump Map Color 3 and Metallic 2",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Bump Map Red"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Bump Map Green"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Bump Map Blue"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Metallic"
+                }
+            },
+            {
+                "Description": "Unknown",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Unknown",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Specular",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Specular"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Specular"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Specular"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Specular"
+                }
+            },
+            {
+                "Description": "Roughness",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Roughness"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Roughness"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Roughness"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Roughness"
+                }
+            },
+            {
+                "Description": "Unknown",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Unknown",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Emissive Color and Intensity",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Emissive Red"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Emissive Green"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Emissive Blue"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Emissive Intensity"
+                }
+            },
+            {
+                "Description": "Unknown",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Camo Layer 4, only used by camo types 0 and 1",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 4 Red"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 4 Green"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 4 Blue"
+                },
+                "Alpha": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 4 Inverted Metallic"
+                }
+            },
+            {
+                "Description": "Camo Layer 1",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 1 Red"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 1 Green"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 1 Blue"
+                },
+                "Alpha": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 1 Inverted Metallic"
+                }
+            },
+            {
+                "Description": "Camo Layer 2",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 2 Red"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 2 Green"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 2 Blue"
+                },
+                "Alpha": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 2 Inverted Metallic"
+                }
+            },
+            {
+                "Description": "Camo Layer 3",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 3 Red"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 3 Green"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 3 Blue"
+                },
+                "Alpha": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 3 Inverted Metallic"
+                }
+            },
+            {
+                "Description": "Unknown",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Camo Fade",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Camo Fade"
+                }
+            },
+            {
+                "Description": "Camo Scale and Type",
+                "Red": {
+                    "Limits": {
+                        "Min": 20,
+                        "Max": 20
+                    },
+                    "Description": "Unknown Constant"
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 0
+                    },
+                    "Description": "Unknown Constant"
+                },
+                "Blue": {
+                    "Limits": null,
+                    "Description": "Camo Scale"
+                },
+                "Alpha": {
+                    "Limits": {
+                        "Min": -1,
+                        "Max": 5
+                    },
+                    "Description": "Camo Type:\n -1. Disabled\n  0. Digital\n  1. Traditional\n  2. Arrows\n  3. Voronoi\n  4. Jungle\n  5. Bands"
+                }
+            },
+            {
+                "Description": "Bump Map Scaling and Gloss Intensity",
+                "Red": {
+                    "Limits": null,
+                    "Description": "Bump Map X-Axis Scale"
+                },
+                "Green": {
+                    "Limits": null,
+                    "Description": "Bump Map Y-Axis Scale"
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": -1,
+                        "Max": 1
+                    },
+                    "Description": "Gloss Intensity"
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            }
+        ]
+    }
+}

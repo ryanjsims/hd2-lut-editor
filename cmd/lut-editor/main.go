@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	_ "embed"
 	"fmt"
 	"image"
 	"image/color"
@@ -21,6 +22,7 @@ import (
 	"github.com/ryanjsims/hd2-lut-editor/dds"
 	_ "github.com/ryanjsims/hd2-lut-editor/dds"
 	"github.com/ryanjsims/hd2-lut-editor/hdrColors"
+	"github.com/ryanjsims/hd2-lut-editor/help"
 	"github.com/ryanjsims/hd2-lut-editor/openexr"
 	"github.com/sqweek/dialog"
 	"github.com/x448/float16"
@@ -33,11 +35,14 @@ var (
 type menuResponse uint8
 
 const (
-	menuResponseNone        menuResponse = 0
-	menuResponseImageOpen   menuResponse = 1
-	menuResponseImageSave   menuResponse = 2
-	menuResponseImageSaveAs menuResponse = 3
-	menuResponseImageNew    menuResponse = 4
+	menuResponseNone         menuResponse = 0
+	menuResponseImageOpen    menuResponse = 1
+	menuResponseImageSave    menuResponse = 2
+	menuResponseImageSaveAs  menuResponse = 3
+	menuResponseImageNew     menuResponse = 4
+	menuResponseViewChannels menuResponse = 5
+	menuResponseViewColor    menuResponse = 6
+	menuResponseViewHelp     menuResponse = 7
 )
 
 type dialogResponse uint8
@@ -114,19 +119,23 @@ func run() {
 	ui := pixelui.New(win, &Atlas, 0)
 
 	var (
-		camPos                              = pixel.ZV
-		camZoom                             = 24.0
-		camZoomSpeed                        = 1.05
-		dragStart                           = pixel.ZV
-		currColor                           = [4]float32{0.0, 0.0, 0.0, 0.0}
-		precision     int32                 = 3
-		fileName      string                = ""
-		saved         bool                  = true
-		refreshSprite bool                  = false
-		response      menuResponse          = menuResponseNone
-		viewedChannel hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
-		lastChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
-		smNewImage    newImageStateMachine
+		camPos                                = pixel.ZV
+		camZoom                               = 24.0
+		camZoomSpeed                          = 1.05
+		dragStart                             = pixel.ZV
+		currColor                             = [4]float32{0.0, 0.0, 0.0, 0.0}
+		precision       int32                 = 3
+		fileName        string                = ""
+		saved           bool                  = true
+		refreshSprite   bool                  = false
+		channelsVisible bool                  = true
+		colorVisible    bool                  = true
+		helpVisible     bool                  = false
+		response        menuResponse          = menuResponseNone
+		viewedChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
+		lastChannel     hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
+		smNewImage      newImageStateMachine
+		helpStruct      help.Help
 	)
 
 	smNewImage = newImageStateMachine{
@@ -163,6 +172,12 @@ func run() {
 		coords := camera.Unproject(win.MousePosition()).Add(spriteCenter)
 		x, y = int(math.Floor(coords.X)), int(math.Floor(coords.Y))
 		return
+	}
+
+	helpStruct, err = help.GetHelp()
+	if err != nil {
+		prt.Errorf("Help Load Error: %v", err)
+		helpStruct = help.Help{PrimaryLUT: nil}
 	}
 
 	for !win.Closed() {
@@ -221,7 +236,7 @@ func run() {
 			sprite.Draw(win, pixel.IM)
 		}
 
-		nextResponse := showMainMenuBar(img)
+		nextResponse := showMainMenuBar(img, []bool{channelsVisible, colorVisible, helpVisible})
 		if nextResponse != menuResponseNone {
 			response = nextResponse
 		}
@@ -306,33 +321,34 @@ func run() {
 		case menuResponseImageSaveAs:
 			response = menuResponseNone
 			go saveFileAs()
+		case menuResponseViewChannels:
+			response = menuResponseNone
+			channelsVisible = !channelsVisible
+		case menuResponseViewColor:
+			response = menuResponseNone
+			colorVisible = !colorVisible
+		case menuResponseViewHelp:
+			response = menuResponseNone
+			helpVisible = !helpVisible
 		default:
 			// Do nothing
+			response = menuResponseNone
 		}
 
-		imgui.BeginV("Color", nil, imgui.WindowFlagsAlwaysAutoResize)
-		{
-			format := fmt.Sprintf("%%.%df", precision)
-			imgui.ColorEdit4V("Color", &currColor, imgui.ColorEditFlagsFloat|imgui.ColorEditFlagsHDR|imgui.ColorEditFlagsNoInputs)
-			imgui.DragFloatV("Red", &currColor[0], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
-			imgui.DragFloatV("Green", &currColor[1], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
-			imgui.DragFloatV("Blue", &currColor[2], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
-			imgui.DragFloatV("Alpha", &currColor[3], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
-			imgui.InputInt("Precision", &precision)
-			precision = min(max(precision, 0), 10)
+		if colorVisible {
+			drawColorWindow(&precision, &currColor, &colorVisible)
 		}
-		imgui.End()
-
-		imgui.BeginV("Channel(s)", nil, imgui.WindowFlagsAlwaysAutoResize)
-		{
-			imgui.RadioButtonInt("RGB", (*int)(&viewedChannel), int(hdrColors.GraySettingNoAlpha))
-			imgui.RadioButtonInt("RGBA", (*int)(&viewedChannel), int(hdrColors.GraySettingNone))
-			imgui.RadioButtonInt("Red", (*int)(&viewedChannel), int(hdrColors.GraySettingRed))
-			imgui.RadioButtonInt("Green", (*int)(&viewedChannel), int(hdrColors.GraySettingBlue))
-			imgui.RadioButtonInt("Blue", (*int)(&viewedChannel), int(hdrColors.GraySettingGreen))
-			imgui.RadioButtonInt("Alpha   ", (*int)(&viewedChannel), int(hdrColors.GraySettingAlpha))
+		if channelsVisible {
+			drawChannelWindow(&viewedChannel, &channelsVisible)
 		}
-		imgui.End()
+		if helpVisible {
+			var x, y int
+			if sprite != nil {
+				x, y = getPixelCoords(cam, sprite.Frame().Center())
+				y = img.Bounds().Dy() - y - 1
+			}
+			drawHelpWindow(helpStruct, y, x, &helpVisible)
+		}
 
 		ui.Draw(win)
 
@@ -356,6 +372,69 @@ func run() {
 		camZoom *= math.Pow(camZoomSpeed, ui.MouseScroll().Y)
 
 		win.Update()
+	}
+}
+
+func drawChannelWindow(viewedChannel *hdrColors.GraySetting, visible *bool) {
+	imgui.BeginV("Channel(s)", visible, imgui.WindowFlagsAlwaysAutoResize|imgui.WindowFlagsNoCollapse)
+	{
+		imgui.RadioButtonInt("RGB", (*int)(viewedChannel), int(hdrColors.GraySettingNoAlpha))
+		imgui.RadioButtonInt("RGBA", (*int)(viewedChannel), int(hdrColors.GraySettingNone))
+		imgui.RadioButtonInt("Red", (*int)(viewedChannel), int(hdrColors.GraySettingRed))
+		imgui.RadioButtonInt("Green", (*int)(viewedChannel), int(hdrColors.GraySettingBlue))
+		imgui.RadioButtonInt("Blue", (*int)(viewedChannel), int(hdrColors.GraySettingGreen))
+		imgui.RadioButtonInt("Alpha   ", (*int)(viewedChannel), int(hdrColors.GraySettingAlpha))
+	}
+	imgui.End()
+}
+
+func drawColorWindow(precision *int32, currColor *([4]float32), visible *bool) {
+	imgui.BeginV("Color", visible, imgui.WindowFlagsAlwaysAutoResize|imgui.WindowFlagsNoCollapse)
+	{
+		format := fmt.Sprintf("%%.%df", *precision)
+		imgui.ColorEdit4V("Color", currColor, imgui.ColorEditFlagsFloat|imgui.ColorEditFlagsHDR|imgui.ColorEditFlagsNoInputs)
+		imgui.DragFloatV("Red", &currColor[0], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
+		imgui.DragFloatV("Green", &currColor[1], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
+		imgui.DragFloatV("Blue", &currColor[2], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
+		imgui.DragFloatV("Alpha", &currColor[3], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
+		imgui.InputInt("Precision", precision)
+		*precision = min(max(*precision, 0), 10)
+	}
+	imgui.End()
+}
+
+func drawHelpWindow(helpStruct help.Help, row, col int, visible *bool) {
+	imgui.BeginV("Help", visible, imgui.WindowFlagsAlwaysAutoResize|imgui.WindowFlagsNoCollapse)
+	{
+		imgui.LabelTextf("Row", "%v", row+1)
+		imgui.LabelTextf("Column", "%v", col+1)
+		if helpStruct.PrimaryLUT != nil {
+			if row < len(helpStruct.PrimaryLUT.Rows) && row >= 0 {
+				rowStruct := helpStruct.PrimaryLUT.Rows[row]
+				imgui.Textf("%s Layer %v %s Channel", rowStruct.Image, rowStruct.Layer+1, rowStruct.Channel)
+			}
+			if col >= 0 && col < len(helpStruct.PrimaryLUT.Columns) {
+				columnStruct := helpStruct.PrimaryLUT.Columns[col]
+				imgui.Text(columnStruct.Description)
+				drawChannelHelp(columnStruct.Red, "Red Channel")
+				drawChannelHelp(columnStruct.Green, "Green Channel")
+				drawChannelHelp(columnStruct.Blue, "Blue Channel")
+				drawChannelHelp(columnStruct.Alpha, "Alpha Channel")
+			}
+		} else {
+			imgui.Text("No help available...")
+		}
+	}
+	imgui.End()
+}
+
+func drawChannelHelp(channelHelp *help.ChannelDescription, label string) {
+	if channelHelp == nil {
+		return
+	}
+	imgui.Textf("%s: %s", label, channelHelp.Description)
+	if channelHelp.Limits != nil {
+		imgui.Textf("    Range [%d to %d]", int(channelHelp.Limits.Min), int(channelHelp.Limits.Max))
 	}
 }
 
@@ -649,11 +728,15 @@ func newImageDialog(st *newImageStateMachine, windowSize imgui.Vec2) dialogRespo
 	return resp
 }
 
-func showMainMenuBar(img image.Image) menuResponse {
+func showMainMenuBar(img image.Image, visibility []bool) menuResponse {
 	response := menuResponseNone
 	if imgui.BeginMainMenuBar() {
 		if imgui.BeginMenu("File") {
 			response = showFileMenu(img)
+			imgui.EndMenu()
+		}
+		if imgui.BeginMenu("View") {
+			response = showViewMenu(visibility)
 			imgui.EndMenu()
 		}
 		imgui.EndMainMenuBar()
@@ -674,6 +757,23 @@ func showFileMenu(img image.Image) menuResponse {
 	}
 	if imgui.MenuItemV("Save As...", "", false, img != nil) {
 		response = menuResponseImageSaveAs
+	}
+	return response
+}
+
+func showViewMenu(visibility []bool) menuResponse {
+	if len(visibility) < 3 {
+		panic(fmt.Errorf("there must be at least 3 visibility bools in the slice"))
+	}
+	response := menuResponseNone
+	if imgui.MenuItemV("Channels", "", visibility[0], true) {
+		response = menuResponseViewChannels
+	}
+	if imgui.MenuItemV("Color", "", visibility[1], true) {
+		response = menuResponseViewColor
+	}
+	if imgui.MenuItemV("Help", "", visibility[2], true) {
+		response = menuResponseViewHelp
 	}
 	return response
 }
