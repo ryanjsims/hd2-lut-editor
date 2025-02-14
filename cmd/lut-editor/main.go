@@ -24,6 +24,7 @@ import (
 	"github.com/ryanjsims/hd2-lut-editor/dds"
 	_ "github.com/ryanjsims/hd2-lut-editor/dds"
 	"github.com/ryanjsims/hd2-lut-editor/hdrColors"
+	"github.com/ryanjsims/hd2-lut-editor/help"
 	"github.com/ryanjsims/hd2-lut-editor/openexr"
 	"github.com/sqweek/dialog"
 	"github.com/x448/float16"
@@ -146,10 +147,12 @@ func run() {
 		channelsVisible bool                  = true
 		colorVisible    bool                  = true
 		gridVisible     bool                  = true
+		helpVisible     bool                  = false
 		response        menuResponse          = menuResponseNone
 		viewedChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
 		lastChannel     hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
 		smNewImage      newImageStateMachine
+		helpStruct      help.Help
 	)
 
 	smNewImage = newImageStateMachine{
@@ -180,6 +183,12 @@ func run() {
 
 	if imagePath != nil {
 		fileName = *imagePath
+	}
+
+	helpStruct, err = help.GetHelp()
+	if err != nil {
+		prt.Errorf("Help Load Error: %v", err)
+		helpStruct = help.Help{PrimaryLUT: nil}
 	}
 
 	for !win.Closed() {
@@ -238,7 +247,7 @@ func run() {
 			sprite.Draw(win, pixel.IM)
 		}
 
-		nextResponse := showMainMenuBar(img, []bool{channelsVisible, colorVisible, gridVisible})
+		nextResponse := showMainMenuBar(img, []bool{channelsVisible, colorVisible, gridVisible, helpVisible})
 		if nextResponse != menuResponseNone {
 			response = nextResponse
 		}
@@ -332,6 +341,9 @@ func run() {
 		case menuResponseViewGrid:
 			response = menuResponseNone
 			gridVisible = !gridVisible
+		case menuResponseViewHelp:
+			response = menuResponseNone
+			helpVisible = !helpVisible
 		default:
 			// Do nothing
 			response = menuResponseNone
@@ -346,6 +358,14 @@ func run() {
 		}
 		if channelsVisible {
 			drawChannelWindow(&viewedChannel, &channelsVisible)
+		}
+		if helpVisible {
+			var x, y int
+			if sprite != nil {
+				x, y = getPixelCoords(cam, sprite.Frame().Center(), win.MousePosition())
+				y = img.Bounds().Dy() - y - 1
+			}
+			drawHelpWindow(helpStruct, y, x, &helpVisible)
 		}
 
 		center := pixel.ZV
@@ -465,6 +485,41 @@ func drawStatusBar(x, y int) {
 			imgui.EndMenuBar()
 		}
 		imgui.End()
+	}
+}
+
+func drawHelpWindow(helpStruct help.Help, row, col int, visible *bool) {
+	imgui.BeginV("Help", visible, imgui.WindowFlagsAlwaysAutoResize|imgui.WindowFlagsNoCollapse)
+	{
+		imgui.LabelTextf("Row", "%v", row+1)
+		imgui.LabelTextf("Column", "%v", col+1)
+		if helpStruct.PrimaryLUT != nil {
+			if row < len(helpStruct.PrimaryLUT.Rows) && row >= 0 {
+				rowStruct := helpStruct.PrimaryLUT.Rows[row]
+				imgui.Textf("%s Layer %v %s Channel", rowStruct.Image, rowStruct.Layer+1, rowStruct.Channel)
+			}
+			if col >= 0 && col < len(helpStruct.PrimaryLUT.Columns) {
+				columnStruct := helpStruct.PrimaryLUT.Columns[col]
+				imgui.Text(columnStruct.Description)
+				drawChannelHelp(columnStruct.Red, "Red Channel")
+				drawChannelHelp(columnStruct.Green, "Green Channel")
+				drawChannelHelp(columnStruct.Blue, "Blue Channel")
+				drawChannelHelp(columnStruct.Alpha, "Alpha Channel")
+			}
+		} else {
+			imgui.Text("No help available...")
+		}
+	}
+	imgui.End()
+}
+
+func drawChannelHelp(channelHelp *help.ChannelDescription, label string) {
+	if channelHelp == nil {
+		return
+	}
+	imgui.Textf("%s: %s", label, channelHelp.Description)
+	if channelHelp.Limits != nil {
+		imgui.Textf("    Range [%d to %d]", int(channelHelp.Limits.Min), int(channelHelp.Limits.Max))
 	}
 }
 
@@ -793,8 +848,8 @@ func showFileMenu(img image.Image) menuResponse {
 }
 
 func showViewMenu(visibility []bool) menuResponse {
-	if len(visibility) < 3 {
-		panic(fmt.Errorf("there must be at least 3 visibility bools in the slice"))
+	if len(visibility) < 4 {
+		panic(fmt.Errorf("there must be at least 4 visibility bools in the slice"))
 	}
 	response := menuResponseNone
 	if imgui.MenuItemV("Channels", "", visibility[0], true) {
@@ -805,6 +860,9 @@ func showViewMenu(visibility []bool) menuResponse {
 	}
 	if imgui.MenuItemV("Grid", "", visibility[2], true) {
 		response = menuResponseViewGrid
+	}
+	if imgui.MenuItemV("Help", "", visibility[3], true) {
+		response = menuResponseViewHelp
 	}
 	return response
 }
