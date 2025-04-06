@@ -14,6 +14,7 @@ import (
 	"github.com/gopxl/pixel/v2"
 	"github.com/gopxl/pixel/v2/backends/opengl"
 	"github.com/gopxl/pixel/v2/ext/atlas"
+	"github.com/gopxl/pixel/v2/ext/imdraw"
 	"github.com/gopxl/pixelui/v2"
 	"github.com/hellflame/argparse"
 	"github.com/inkyblackness/imgui-go/v4"
@@ -41,6 +42,8 @@ const (
 	menuResponseImageNew     menuResponse = 4
 	menuResponseViewChannels menuResponse = 5
 	menuResponseViewColor    menuResponse = 6
+	menuResponseViewHelp     menuResponse = 7
+	menuResponseViewGrid     menuResponse = 8
 )
 
 type dialogResponse uint8
@@ -128,6 +131,7 @@ func run() {
 		refreshSprite   bool                  = false
 		channelsVisible bool                  = true
 		colorVisible    bool                  = true
+		gridVisible     bool                  = true
 		response        menuResponse          = menuResponseNone
 		viewedChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
 		lastChannel     hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
@@ -164,12 +168,6 @@ func run() {
 		fileName = *imagePath
 	}
 
-	getPixelCoords := func(camera pixel.Matrix, spriteCenter pixel.Vec) (x, y int) {
-		coords := camera.Unproject(win.MousePosition()).Add(spriteCenter)
-		x, y = int(math.Floor(coords.X)), int(math.Floor(coords.Y))
-		return
-	}
-
 	for !win.Closed() {
 		ui.NewFrame()
 		win.Clear(clearColor)
@@ -196,7 +194,7 @@ func run() {
 		}
 
 		if ui.Pressed(pixel.MouseButtonRight) && sprite != nil {
-			x, y := getPixelCoords(cam, sprite.Frame().Center())
+			x, y := getPixelCoords(cam, sprite.Frame().Center(), win.MousePosition())
 			y = img.Bounds().Dy() - y - 1
 			if x < img.Bounds().Dx() && y < img.Bounds().Dy() && x >= 0 && y >= 0 {
 				grayable, ok := getGrayable(img)
@@ -212,7 +210,7 @@ func run() {
 		}
 
 		if ui.Pressed(pixel.MouseButtonLeft) && sprite != nil {
-			x, y := getPixelCoords(cam, sprite.Frame().Center())
+			x, y := getPixelCoords(cam, sprite.Frame().Center(), win.MousePosition())
 			y = img.Bounds().Dy() - y - 1
 			if x < img.Bounds().Dx() && y < img.Bounds().Dy() && x >= 0 && y >= 0 {
 				setHDRFromFloats(x, y, currColor, img)
@@ -226,7 +224,7 @@ func run() {
 			sprite.Draw(win, pixel.IM)
 		}
 
-		nextResponse := showMainMenuBar(img, []bool{channelsVisible, colorVisible})
+		nextResponse := showMainMenuBar(img, []bool{channelsVisible, colorVisible, gridVisible})
 		if nextResponse != menuResponseNone {
 			response = nextResponse
 		}
@@ -317,9 +315,16 @@ func run() {
 		case menuResponseViewColor:
 			response = menuResponseNone
 			colorVisible = !colorVisible
+		case menuResponseViewGrid:
+			response = menuResponseNone
+			gridVisible = !gridVisible
 		default:
 			// Do nothing
 			response = menuResponseNone
+		}
+
+		if gridVisible && sprite != nil {
+			drawGrid(win, camZoom, sprite.Frame())
 		}
 
 		if colorVisible {
@@ -328,6 +333,12 @@ func run() {
 		if channelsVisible {
 			drawChannelWindow(&viewedChannel, &channelsVisible)
 		}
+
+		center := pixel.ZV
+		if sprite != nil {
+			center = sprite.Frame().Center()
+		}
+		drawStatusBar(getPixelCoords(cam, center, win.MousePosition()))
 
 		ui.Draw(win)
 
@@ -352,6 +363,12 @@ func run() {
 
 		win.Update()
 	}
+}
+
+func getPixelCoords(camera pixel.Matrix, spriteCenter pixel.Vec, mousePosition pixel.Vec) (x, y int) {
+	coords := camera.Unproject(mousePosition).Add(spriteCenter)
+	x, y = int(math.Floor(coords.X)), int(math.Floor(coords.Y))
+	return
 }
 
 func drawChannelWindow(viewedChannel *hdrColors.GraySetting, visible *bool) {
@@ -380,6 +397,62 @@ func drawColorWindow(precision *int32, currColor *([4]float32), visible *bool) {
 		*precision = min(max(*precision, 0), 10)
 	}
 	imgui.End()
+}
+
+func drawGrid(win *opengl.Window, camZoom float64, spriteFrame pixel.Rect) {
+	grid := imdraw.New(nil)
+	gridColor := pixel.RGBA{
+		R: 0.5,
+		G: 0.5,
+		B: 0.5,
+		A: 0.25,
+	}
+
+	pixels := spriteFrame.Size()
+	lineWidth := 1.0 / camZoom
+	lineSpacing := int(max(1, math.Pow(2.0, math.Log2(lineWidth)+3.5)))
+	fmt.Printf("line width: %6.3f line spacing: %v\r", lineWidth, lineSpacing)
+	for line := 0; line <= int(pixels.X); line += lineSpacing {
+		grid.Color = gridColor
+		grid.Push(pixel.Vec{X: float64(line) - pixels.X/2, Y: -pixels.Y / 2})
+		grid.Push(pixel.Vec{X: float64(line) - pixels.X/2, Y: pixels.Y / 2})
+		grid.Line(lineWidth)
+		grid.Reset()
+	}
+	for line := 0; line <= int(pixels.Y); line += lineSpacing {
+		grid.Color = gridColor
+		grid.Push(pixel.Vec{X: -pixels.X / 2, Y: float64(line) - pixels.Y/2})
+		grid.Push(pixel.Vec{X: pixels.X / 2, Y: float64(line) - pixels.Y/2})
+		grid.Line(lineWidth)
+		grid.Reset()
+	}
+	grid.Draw(win)
+}
+
+func drawStatusBar(x, y int) {
+	viewport := imgui.MainViewport()
+	imgui.SetNextWindowPos(imgui.Vec2{
+		X: viewport.Pos().X,
+		Y: viewport.Pos().Y + viewport.Size().Y - imgui.FrameHeight(),
+	})
+
+	imgui.SetNextWindowSize(imgui.Vec2{
+		X: viewport.Size().X,
+		Y: imgui.FrameHeight(),
+	})
+
+	flags := (imgui.WindowFlagsNoDecoration | imgui.WindowFlagsNoInputs |
+		imgui.WindowFlagsNoMove | imgui.WindowFlagsNoScrollWithMouse |
+		imgui.WindowFlagsNoSavedSettings | imgui.WindowFlagsNoBringToFrontOnFocus |
+		imgui.WindowFlagsNoBackground | imgui.WindowFlagsMenuBar)
+
+	if imgui.BeginV("StatusBar", nil, flags) {
+		if imgui.BeginMenuBar() {
+			imgui.Textf("X: %d Y: %d", x, y)
+			imgui.EndMenuBar()
+		}
+		imgui.End()
+	}
 }
 
 func (st *newImageStateMachine) handleNewImageStateMachine(win *opengl.Window, img *image.Image, refreshSprite *bool, saved *bool, fileName *string, lastChannel *hdrColors.GraySetting) {
@@ -707,8 +780,8 @@ func showFileMenu(img image.Image) menuResponse {
 }
 
 func showViewMenu(visibility []bool) menuResponse {
-	if len(visibility) < 2 {
-		panic(fmt.Errorf("there must be at least 2 visibility bools in the slice"))
+	if len(visibility) < 3 {
+		panic(fmt.Errorf("there must be at least 3 visibility bools in the slice"))
 	}
 	response := menuResponseNone
 	if imgui.MenuItemV("Channels", "", visibility[0], true) {
@@ -716,6 +789,9 @@ func showViewMenu(visibility []bool) menuResponse {
 	}
 	if imgui.MenuItemV("Color", "", visibility[1], true) {
 		response = menuResponseViewColor
+	}
+	if imgui.MenuItemV("Grid", "", visibility[2], true) {
+		response = menuResponseViewGrid
 	}
 	return response
 }
