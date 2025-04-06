@@ -209,18 +209,7 @@ func run() {
 
 		if ui.Pressed(pixel.MouseButtonRight) && sprite != nil {
 			x, y := getPixelCoords(cam, sprite.Frame().Center(), win.MousePosition())
-			y = img.Bounds().Dy() - y - 1
-			if x < img.Bounds().Dx() && y < img.Bounds().Dy() && x >= 0 && y >= 0 {
-				grayable, ok := getGrayable(img)
-				if ok {
-					grayable.SetGray(hdrColors.GraySettingNone)
-				}
-				pxColor := img.At(x, y)
-				currColor = hdrColorToFloats(prt, pxColor, img.ColorModel())
-				if ok {
-					grayable.SetGray(viewedChannel)
-				}
-			}
+			currColor = getImgColorAtCoords(prt, img, x, y, viewedChannel)
 		}
 
 		if ui.Pressed(pixel.MouseButtonLeft) && sprite != nil {
@@ -352,7 +341,13 @@ func run() {
 		if sprite != nil {
 			center = sprite.Frame().Center()
 		}
-		drawStatusBar(getPixelCoords(cam, center, win.MousePosition()))
+		hovX, hovY := getPixelCoords(cam, center, win.MousePosition())
+		hovColor := getImgColorAtCoords(prt, img, hovX, hovY, viewedChannel)
+		hovY = -hovY - 1
+		if img != nil {
+			hovY += img.Bounds().Dy()
+		}
+		drawStatusBar(hovX+1, hovY+1, hovColor)
 
 		ui.Draw(win)
 
@@ -383,6 +378,25 @@ func getPixelCoords(camera pixel.Matrix, spriteCenter pixel.Vec, mousePosition p
 	coords := camera.Unproject(mousePosition).Add(spriteCenter)
 	x, y = int(math.Floor(coords.X)), int(math.Floor(coords.Y))
 	return
+}
+
+func getImgColorAtCoords(prt *app.Printer, img image.Image, x, y int, viewedChannel hdrColors.GraySetting) [4]float32 {
+	if img == nil {
+		return [4]float32{}
+	}
+	y = img.Bounds().Dy() - y - 1
+	if x < img.Bounds().Dx() && y < img.Bounds().Dy() && x >= 0 && y >= 0 {
+		grayable, ok := getGrayable(img)
+		if ok {
+			grayable.SetGray(hdrColors.GraySettingNone)
+		}
+		pxColor := img.At(x, y)
+		if ok {
+			grayable.SetGray(viewedChannel)
+		}
+		return hdrColorToFloats(prt, pxColor, img.ColorModel())
+	}
+	return [4]float32{}
 }
 
 func drawChannelWindow(viewedChannel *hdrColors.GraySetting, visible *bool) {
@@ -442,7 +456,7 @@ func drawGrid(win *opengl.Window, camZoom float64, spriteFrame pixel.Rect) {
 	grid.Draw(win)
 }
 
-func drawStatusBar(x, y int) {
+func drawStatusBar(x, y int, color [4]float32) {
 	viewport := imgui.MainViewport()
 	imgui.SetNextWindowPos(imgui.Vec2{
 		X: viewport.Pos().X,
@@ -461,7 +475,7 @@ func drawStatusBar(x, y int) {
 
 	if imgui.BeginV("StatusBar", nil, flags) {
 		if imgui.BeginMenuBar() {
-			imgui.Textf("X: %d Y: %d", x, y)
+			imgui.Textf("X: %d Y: %d RGBA: (%3.3f, %3.3f, %3.3f, %3.3f)", x, y, color[0], color[1], color[2], color[3])
 			imgui.EndMenuBar()
 		}
 		imgui.End()
