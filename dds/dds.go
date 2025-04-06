@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"strconv"
 
 	"github.com/ryanjsims/hd2-lut-editor/hdrColors"
 )
@@ -197,7 +198,7 @@ func DecodeInfo(r io.Reader) (Info, error) {
 				cubemap = true
 			}
 		default:
-			return Info{}, fmt.Errorf("unsupported cmpression format: unknown fourCC: %v", string(hdr.PixelFormat.FourCC[:]))
+			return Info{}, fmt.Errorf("unsupported cmpression format: unknown fourCC: %v", strconv.Quote(string(hdr.PixelFormat.FourCC[:])))
 		}
 	}
 
