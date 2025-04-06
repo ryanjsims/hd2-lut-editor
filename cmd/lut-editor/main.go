@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	_ "embed"
 	"fmt"
 	"image"
 	"image/color"
@@ -33,11 +34,13 @@ var (
 type menuResponse uint8
 
 const (
-	menuResponseNone        menuResponse = 0
-	menuResponseImageOpen   menuResponse = 1
-	menuResponseImageSave   menuResponse = 2
-	menuResponseImageSaveAs menuResponse = 3
-	menuResponseImageNew    menuResponse = 4
+	menuResponseNone         menuResponse = 0
+	menuResponseImageOpen    menuResponse = 1
+	menuResponseImageSave    menuResponse = 2
+	menuResponseImageSaveAs  menuResponse = 3
+	menuResponseImageNew     menuResponse = 4
+	menuResponseViewChannels menuResponse = 5
+	menuResponseViewColor    menuResponse = 6
 )
 
 type dialogResponse uint8
@@ -114,19 +117,21 @@ func run() {
 	ui := pixelui.New(win, &Atlas, 0)
 
 	var (
-		camPos                              = pixel.ZV
-		camZoom                             = 24.0
-		camZoomSpeed                        = 1.05
-		dragStart                           = pixel.ZV
-		currColor                           = [4]float32{0.0, 0.0, 0.0, 0.0}
-		precision     int32                 = 3
-		fileName      string                = ""
-		saved         bool                  = true
-		refreshSprite bool                  = false
-		response      menuResponse          = menuResponseNone
-		viewedChannel hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
-		lastChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
-		smNewImage    newImageStateMachine
+		camPos                                = pixel.ZV
+		camZoom                               = 24.0
+		camZoomSpeed                          = 1.05
+		dragStart                             = pixel.ZV
+		currColor                             = [4]float32{0.0, 0.0, 0.0, 0.0}
+		precision       int32                 = 3
+		fileName        string                = ""
+		saved           bool                  = true
+		refreshSprite   bool                  = false
+		channelsVisible bool                  = true
+		colorVisible    bool                  = true
+		response        menuResponse          = menuResponseNone
+		viewedChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
+		lastChannel     hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
+		smNewImage      newImageStateMachine
 	)
 
 	smNewImage = newImageStateMachine{
@@ -221,7 +226,7 @@ func run() {
 			sprite.Draw(win, pixel.IM)
 		}
 
-		nextResponse := showMainMenuBar(img)
+		nextResponse := showMainMenuBar(img, []bool{channelsVisible, colorVisible})
 		if nextResponse != menuResponseNone {
 			response = nextResponse
 		}
@@ -306,33 +311,23 @@ func run() {
 		case menuResponseImageSaveAs:
 			response = menuResponseNone
 			go saveFileAs()
+		case menuResponseViewChannels:
+			response = menuResponseNone
+			channelsVisible = !channelsVisible
+		case menuResponseViewColor:
+			response = menuResponseNone
+			colorVisible = !colorVisible
 		default:
 			// Do nothing
+			response = menuResponseNone
 		}
 
-		imgui.BeginV("Color", nil, imgui.WindowFlagsAlwaysAutoResize)
-		{
-			format := fmt.Sprintf("%%.%df", precision)
-			imgui.ColorEdit4V("Color", &currColor, imgui.ColorEditFlagsFloat|imgui.ColorEditFlagsHDR|imgui.ColorEditFlagsNoInputs)
-			imgui.DragFloatV("Red", &currColor[0], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
-			imgui.DragFloatV("Green", &currColor[1], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
-			imgui.DragFloatV("Blue", &currColor[2], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
-			imgui.DragFloatV("Alpha", &currColor[3], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
-			imgui.InputInt("Precision", &precision)
-			precision = min(max(precision, 0), 10)
+		if colorVisible {
+			drawColorWindow(&precision, &currColor, &colorVisible)
 		}
-		imgui.End()
-
-		imgui.BeginV("Channel(s)", nil, imgui.WindowFlagsAlwaysAutoResize)
-		{
-			imgui.RadioButtonInt("RGB", (*int)(&viewedChannel), int(hdrColors.GraySettingNoAlpha))
-			imgui.RadioButtonInt("RGBA", (*int)(&viewedChannel), int(hdrColors.GraySettingNone))
-			imgui.RadioButtonInt("Red", (*int)(&viewedChannel), int(hdrColors.GraySettingRed))
-			imgui.RadioButtonInt("Green", (*int)(&viewedChannel), int(hdrColors.GraySettingBlue))
-			imgui.RadioButtonInt("Blue", (*int)(&viewedChannel), int(hdrColors.GraySettingGreen))
-			imgui.RadioButtonInt("Alpha   ", (*int)(&viewedChannel), int(hdrColors.GraySettingAlpha))
+		if channelsVisible {
+			drawChannelWindow(&viewedChannel, &channelsVisible)
 		}
-		imgui.End()
 
 		ui.Draw(win)
 
@@ -357,6 +352,34 @@ func run() {
 
 		win.Update()
 	}
+}
+
+func drawChannelWindow(viewedChannel *hdrColors.GraySetting, visible *bool) {
+	imgui.BeginV("Channel(s)", visible, imgui.WindowFlagsAlwaysAutoResize|imgui.WindowFlagsNoCollapse)
+	{
+		imgui.RadioButtonInt("RGB", (*int)(viewedChannel), int(hdrColors.GraySettingNoAlpha))
+		imgui.RadioButtonInt("RGBA", (*int)(viewedChannel), int(hdrColors.GraySettingNone))
+		imgui.RadioButtonInt("Red", (*int)(viewedChannel), int(hdrColors.GraySettingRed))
+		imgui.RadioButtonInt("Green", (*int)(viewedChannel), int(hdrColors.GraySettingBlue))
+		imgui.RadioButtonInt("Blue", (*int)(viewedChannel), int(hdrColors.GraySettingGreen))
+		imgui.RadioButtonInt("Alpha   ", (*int)(viewedChannel), int(hdrColors.GraySettingAlpha))
+	}
+	imgui.End()
+}
+
+func drawColorWindow(precision *int32, currColor *([4]float32), visible *bool) {
+	imgui.BeginV("Color", visible, imgui.WindowFlagsAlwaysAutoResize|imgui.WindowFlagsNoCollapse)
+	{
+		format := fmt.Sprintf("%%.%df", *precision)
+		imgui.ColorEdit4V("Color", currColor, imgui.ColorEditFlagsFloat|imgui.ColorEditFlagsHDR|imgui.ColorEditFlagsNoInputs)
+		imgui.DragFloatV("Red", &currColor[0], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
+		imgui.DragFloatV("Green", &currColor[1], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
+		imgui.DragFloatV("Blue", &currColor[2], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
+		imgui.DragFloatV("Alpha", &currColor[3], 0.01, 0.0, 0.0, format, imgui.SliderFlagsNone)
+		imgui.InputInt("Precision", precision)
+		*precision = min(max(*precision, 0), 10)
+	}
+	imgui.End()
 }
 
 func (st *newImageStateMachine) handleNewImageStateMachine(win *opengl.Window, img *image.Image, refreshSprite *bool, saved *bool, fileName *string, lastChannel *hdrColors.GraySetting) {
@@ -446,8 +469,9 @@ func loadImage(path string) (image.Image, error) {
 
 	var img image.Image
 	if filepath.Ext(path) == ".exr" {
+		var exr *openexr.OpenEXR
 		bufR := bufio.NewReader(im)
-		exr, err := openexr.LoadOpenEXR(*bufR)
+		exr, err = openexr.LoadOpenEXR(*bufR)
 		if err != nil {
 			return nil, err
 		}
@@ -649,11 +673,15 @@ func newImageDialog(st *newImageStateMachine, windowSize imgui.Vec2) dialogRespo
 	return resp
 }
 
-func showMainMenuBar(img image.Image) menuResponse {
+func showMainMenuBar(img image.Image, visibility []bool) menuResponse {
 	response := menuResponseNone
 	if imgui.BeginMainMenuBar() {
 		if imgui.BeginMenu("File") {
 			response = showFileMenu(img)
+			imgui.EndMenu()
+		}
+		if imgui.BeginMenu("View") {
+			response = showViewMenu(visibility)
 			imgui.EndMenu()
 		}
 		imgui.EndMainMenuBar()
@@ -674,6 +702,20 @@ func showFileMenu(img image.Image) menuResponse {
 	}
 	if imgui.MenuItemV("Save As...", "", false, img != nil) {
 		response = menuResponseImageSaveAs
+	}
+	return response
+}
+
+func showViewMenu(visibility []bool) menuResponse {
+	if len(visibility) < 2 {
+		panic(fmt.Errorf("there must be at least 2 visibility bools in the slice"))
+	}
+	response := menuResponseNone
+	if imgui.MenuItemV("Channels", "", visibility[0], true) {
+		response = menuResponseViewChannels
+	}
+	if imgui.MenuItemV("Color", "", visibility[1], true) {
+		response = menuResponseViewColor
 	}
 	return response
 }
