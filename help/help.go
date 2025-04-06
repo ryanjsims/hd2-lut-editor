@@ -3,7 +3,6 @@ package help
 import (
 	_ "embed"
 	"encoding/json"
-	"fmt"
 )
 
 //go:embed help.json
@@ -33,7 +32,7 @@ type Column struct {
 	Alpha       *ChannelDescription
 }
 
-type PrimaryLUTStruct struct {
+type LUT struct {
 	Width   MinMax
 	Height  MinMax
 	Rows    []Row
@@ -41,22 +40,19 @@ type PrimaryLUTStruct struct {
 }
 
 type Help struct {
-	PrimaryLUT *PrimaryLUTStruct
+	MaterialLUT *LUT
+	PatternLUT  *LUT
 }
 
 var helpStruct Help = Help{
-	PrimaryLUT: nil,
+	MaterialLUT: nil,
+	PatternLUT:  nil,
 }
 
 func GetHelp() (Help, error) {
-	if helpStruct.PrimaryLUT != nil {
-		fmt.Printf("Help: PrimaryLUT = %v\n", helpStruct.PrimaryLUT)
+	if helpStruct.MaterialLUT != nil {
 		return helpStruct, nil
 	}
 	err := json.Unmarshal(helpContent, &helpStruct)
-	fmt.Printf("Help: err = %v\n", err)
-	if err == nil {
-		fmt.Printf("Help: PrimaryLUT = %v\n", helpStruct.PrimaryLUT)
-	}
 	return helpStruct, err
 }

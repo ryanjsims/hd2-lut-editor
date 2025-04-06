@@ -71,6 +71,15 @@ type newImageStateMachine struct {
 	ModelIndex int
 }
 
+type lutType uint8
+
+const (
+	lutTypeNotALUT lutType = 0
+	lutTypePrimary lutType = 23
+	lutTypePattern lutType = 3
+	lutTypeCape    lutType = 16
+)
+
 const baseTitle string = "Helldiver 2 LUT Editor"
 
 func run() {
@@ -188,7 +197,7 @@ func run() {
 	helpStruct, err = help.GetHelp()
 	if err != nil {
 		prt.Errorf("Help Load Error: %v", err)
-		helpStruct = help.Help{PrimaryLUT: nil}
+		helpStruct = help.Help{MaterialLUT: nil}
 	}
 
 	for !win.Closed() {
@@ -361,11 +370,13 @@ func run() {
 		}
 		if helpVisible {
 			var x, y int
+			bounds := image.Rect(0, 0, 0, 0)
 			if sprite != nil {
+				bounds = img.Bounds()
 				x, y = getPixelCoords(cam, sprite.Frame().Center(), win.MousePosition())
 				y = img.Bounds().Dy() - y - 1
 			}
-			drawHelpWindow(helpStruct, y, x, &helpVisible)
+			drawHelpWindow(helpStruct, y, x, &helpVisible, bounds)
 		}
 
 		center := pixel.ZV
@@ -488,26 +499,35 @@ func drawStatusBar(x, y int) {
 	}
 }
 
-func drawHelpWindow(helpStruct help.Help, row, col int, visible *bool) {
+func drawHelpWindow(helpStruct help.Help, row, col int, visible *bool, bounds image.Rectangle) {
 	imgui.BeginV("Help", visible, imgui.WindowFlagsAlwaysAutoResize|imgui.WindowFlagsNoCollapse)
 	{
-		imgui.LabelTextf("Row", "%v", row+1)
-		imgui.LabelTextf("Column", "%v", col+1)
-		if helpStruct.PrimaryLUT != nil {
-			if row < len(helpStruct.PrimaryLUT.Rows) && row >= 0 {
-				rowStruct := helpStruct.PrimaryLUT.Rows[row]
+		var helpLut *help.LUT
+		switch lutType(bounds.Dx()) {
+		case lutTypePrimary:
+			helpLut = helpStruct.MaterialLUT
+			imgui.Text("Material LUT")
+		case lutTypePattern:
+			helpLut = helpStruct.PatternLUT
+			imgui.Text("Pattern LUT")
+		default:
+			helpLut = nil
+			imgui.Text("Not a known LUT type")
+		}
+		imgui.Textf("[%2d, %2d]", col+1, row+1)
+		if helpLut != nil {
+			if row < len(helpLut.Rows) && row >= 0 && row < bounds.Dy() {
+				rowStruct := helpLut.Rows[row]
 				imgui.Textf("%s Layer %v %s Channel", rowStruct.Image, rowStruct.Layer+1, rowStruct.Channel)
 			}
-			if col >= 0 && col < len(helpStruct.PrimaryLUT.Columns) {
-				columnStruct := helpStruct.PrimaryLUT.Columns[col]
+			if col >= 0 && col < len(helpLut.Columns) {
+				columnStruct := helpLut.Columns[col]
 				imgui.Text(columnStruct.Description)
 				drawChannelHelp(columnStruct.Red, "Red Channel")
 				drawChannelHelp(columnStruct.Green, "Green Channel")
 				drawChannelHelp(columnStruct.Blue, "Blue Channel")
 				drawChannelHelp(columnStruct.Alpha, "Alpha Channel")
 			}
-		} else {
-			imgui.Text("No help available...")
 		}
 	}
 	imgui.End()

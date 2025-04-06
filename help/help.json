@@ -1,5 +1,5 @@
 {
-    "PrimaryLUT": {
+    "MaterialLUT": {
         "Width": {
             "Min": 23,
             "Max": 23
@@ -72,7 +72,7 @@
                         "Min": 0,
                         "Max": 1
                     },
-                    "Description": "Albedo blue channel"
+                    "Description": ""
                 },
                 "Alpha": {
                     "Limits": null,
@@ -230,22 +230,31 @@
                 }
             },
             {
-                "Description": "Unknown",
+                "Description": "Bump Map Grime",
                 "Red": {
-                    "Limits": null,
-                    "Description": "Effects unknown"
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
                 },
                 "Green": {
-                    "Limits": null,
-                    "Description": "Effects unknown"
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
                 },
                 "Blue": {
-                    "Limits": null,
-                    "Description": "Effects unknown"
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
                 },
                 "Alpha": {
                     "Limits": null,
-                    "Description": "Effects unknown"
+                    "Description": "Inverse Intensity, larger values lower effects"
                 }
             },
             {
@@ -391,34 +400,22 @@
                 }
             },
             {
-                "Description": "Camo Layer 4, only used by camo types 0 and 1",
+                "Description": "Unknown",
                 "Red": {
-                    "Limits": {
-                        "Min": 0,
-                        "Max": 1
-                    },
-                    "Description": "Camo Layer 4 Red"
+                    "Limits": null,
+                    "Description": "Effects unknown"
                 },
                 "Green": {
-                    "Limits": {
-                        "Min": 0,
-                        "Max": 1
-                    },
-                    "Description": "Camo Layer 4 Green"
+                    "Limits": null,
+                    "Description": "Effects unknown"
                 },
                 "Blue": {
-                    "Limits": {
-                        "Min": 0,
-                        "Max": 1
-                    },
-                    "Description": "Camo Layer 4 Blue"
+                    "Limits": null,
+                    "Description": "Effects unknown"
                 },
                 "Alpha": {
-                    "Limits": {
-                        "Min": 0,
-                        "Max": 1
-                    },
-                    "Description": "Camo Layer 4 Inverted Metallic"
+                    "Limits": null,
+                    "Description": "Effects unknown"
                 }
             },
             {
@@ -515,22 +512,34 @@
                 }
             },
             {
-                "Description": "Unknown",
+                "Description": "Camo Layer 4, only used by camo types 0 and 1",
                 "Red": {
-                    "Limits": null,
-                    "Description": "Effects unknown"
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 4 Red"
                 },
                 "Green": {
-                    "Limits": null,
-                    "Description": "Effects unknown"
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 4 Green"
                 },
                 "Blue": {
-                    "Limits": null,
-                    "Description": "Effects unknown"
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 4 Blue"
                 },
                 "Alpha": {
-                    "Limits": null,
-                    "Description": "Effects unknown"
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Camo Layer 4 Inverted Metallic"
                 }
             },
             {
@@ -601,6 +610,91 @@
                     "Limits": null,
                     "Description": "Effects unknown"
                 }
+            }
+        ]
+    },
+    "PatternLUT": {
+        "Width": {
+            "Min": 3,
+            "Max": 3
+        },
+        "Height": {
+            "Min": 1,
+            "Max": 1
+        },
+        "Rows": [
+            {
+                "Image": "Pattern Mask",
+                "Layer": 0,
+                "Channel": "Red"
+            }
+        ],
+        "Columns": [
+            {
+                "Description": "Albedo",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
+                },
+                "Alpha": {
+                    "Limits": null,
+                    "Description": "Effects unknown"
+                }
+            },
+            {
+                "Description": "Metallic",
+                "Red": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
+                },
+                "Green": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
+                },
+                "Blue": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": ""
+                },
+                "Alpha": {
+                    "Limits": {
+                        "Min": 0,
+                        "Max": 1
+                    },
+                    "Description": "Pattern Opacity"
+                }
+            },
+            {
+                "Description": "Unknown",
+                "Red": null,
+                "Green": null,
+                "Blue": null,
+                "Alpha": null
             }
         ]
     }
