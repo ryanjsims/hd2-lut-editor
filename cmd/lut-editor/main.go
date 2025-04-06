@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/gopxl/pixel/v2"
 	"github.com/gopxl/pixel/v2/backends/opengl"
@@ -72,11 +73,24 @@ type newImageStateMachine struct {
 const baseTitle string = "Helldiver 2 LUT Editor"
 
 func run() {
+	logFile, err := os.OpenFile("lut-editor.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		logFile = os.Stderr
+	} else {
+		defer logFile.Close()
+	}
+
 	prt := app.NewPrinter(
-		supportscolor.Stderr().SupportsColor,
-		os.Stderr,
-		os.Stderr,
+		supportscolor.SupportsColor(logFile.Fd(), supportscolor.SniffFlagsOption(true)).SupportsColor,
+		logFile,
+		logFile,
 	)
+
+	defer func() {
+		if r := recover(); r != nil {
+			prt.Errorf("panic: %w\n%s", r, debug.Stack())
+		}
+	}()
 
 	parser := argparse.NewParser(
 		"lut_editor",
@@ -91,7 +105,7 @@ func run() {
 		Required:   false,
 	})
 
-	if err := parser.Parse(nil); err != nil {
+	if err = parser.Parse(nil); err != nil {
 		if err == argparse.BreakAfterHelpError {
 			os.Exit(0)
 		}
