@@ -411,7 +411,6 @@ func drawGrid(win *opengl.Window, camZoom float64, spriteFrame pixel.Rect) {
 	pixels := spriteFrame.Size()
 	lineWidth := 1.0 / camZoom
 	lineSpacing := int(max(1, math.Pow(2.0, math.Log2(lineWidth)+3.5)))
-	fmt.Printf("line width: %6.3f line spacing: %v\r", lineWidth, lineSpacing)
 	for line := 0; line <= int(pixels.X); line += lineSpacing {
 		grid.Color = gridColor
 		grid.Push(pixel.Vec{X: float64(line) - pixels.X/2, Y: -pixels.Y / 2})
