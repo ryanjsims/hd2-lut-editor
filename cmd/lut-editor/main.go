@@ -226,7 +226,7 @@ func run() {
 			sprite.Draw(win, pixel.IM)
 		}
 
-		nextResponse := showMainMenuBar(img, []bool{channelsVisible, colorVisible, gridVisible})
+		nextResponse := showMainMenuBar(img, channelsVisible, colorVisible, gridVisible)
 		if nextResponse != menuResponseNone {
 			response = nextResponse
 		}
@@ -774,7 +774,7 @@ func newImageDialog(st *newImageStateMachine, windowSize imgui.Vec2) dialogRespo
 	return resp
 }
 
-func showMainMenuBar(img image.Image, visibility []bool) menuResponse {
+func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible bool) menuResponse {
 	response := menuResponseNone
 	if imgui.BeginMainMenuBar() {
 		if imgui.BeginMenu("File") {
@@ -782,7 +782,7 @@ func showMainMenuBar(img image.Image, visibility []bool) menuResponse {
 			imgui.EndMenu()
 		}
 		if imgui.BeginMenu("View") {
-			response = showViewMenu(visibility)
+			response = showViewMenu(channelsVisible, colorVisible, gridVisible)
 			imgui.EndMenu()
 		}
 		imgui.EndMainMenuBar()
@@ -807,18 +807,15 @@ func showFileMenu(img image.Image) menuResponse {
 	return response
 }
 
-func showViewMenu(visibility []bool) menuResponse {
-	if len(visibility) < 3 {
-		panic(fmt.Errorf("there must be at least 3 visibility bools in the slice"))
-	}
+func showViewMenu(channelsVisible, colorVisible, gridVisible bool) menuResponse {
 	response := menuResponseNone
-	if imgui.MenuItemV("Channels", "", visibility[0], true) {
+	if imgui.MenuItemV("Channels", "", channelsVisible, true) {
 		response = menuResponseViewChannels
 	}
-	if imgui.MenuItemV("Color", "", visibility[1], true) {
+	if imgui.MenuItemV("Color", "", colorVisible, true) {
 		response = menuResponseViewColor
 	}
-	if imgui.MenuItemV("Grid", "", visibility[2], true) {
+	if imgui.MenuItemV("Grid", "", gridVisible, true) {
 		response = menuResponseViewGrid
 	}
 	return response
