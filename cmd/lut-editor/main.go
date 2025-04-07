@@ -231,45 +231,6 @@ func run() {
 			response = nextResponse
 		}
 
-		saveFile := func() {
-			out, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				prt.Errorf("failed to save: %v", err)
-				return
-			}
-
-			defer out.Close()
-			if filepath.Ext(fileName) == ".exr" {
-				err = openexr.WriteHDR(out, img)
-			} else if filepath.Ext(fileName) == ".dds" {
-				err = dds.WriteHDR(out, img)
-			} else {
-				prt.Errorf("only saving to .exr or .dds implemented currently")
-				return
-			}
-			if err != nil {
-				prt.Errorf("failed to write img to %s: %v", fileName, err)
-				return
-			}
-			length, err := out.Seek(0, io.SeekCurrent)
-			if err == nil {
-				out.Truncate(length)
-			}
-			saved = true
-		}
-
-		saveFileAs := func() {
-			nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Save()
-			if err == dialog.ErrCancelled {
-				return
-			} else if err != nil {
-				prt.Errorf("%v", err)
-				return
-			}
-			fileName = nextFileName
-			saveFile()
-		}
-
 		switch response {
 		case menuResponseImageNew:
 			if smNewImage.State == newImageStateNone && len(fileName) != 0 {
@@ -284,33 +245,16 @@ func run() {
 		case menuResponseImageSave:
 			response = menuResponseNone
 			if fileName == "(new)" || len(fileName) == 0 {
-				go saveFileAs()
+				go saveFileAs(prt, &fileName, img, &saved)
 			} else {
-				go saveFile()
+				go saveFile(prt, fileName, img, &saved)
 			}
 		case menuResponseImageOpen:
-			go func() {
-				nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Load()
-				if err == dialog.ErrCancelled {
-					return
-				} else if err != nil {
-					prt.Errorf("%v", err)
-					return
-				}
-				nextImg, err := loadImage(nextFileName)
-				if err != nil {
-					prt.Errorf("Failed to load '%s': %v", nextFileName, err)
-					return
-				}
-				fileName = nextFileName
-				img = nextImg
-				refreshSprite = true
-				lastChannel = hdrColors.GraySettingNone
-			}()
 			response = menuResponseNone
+			go openFile(prt, &fileName, &img, &refreshSprite, &lastChannel)
 		case menuResponseImageSaveAs:
 			response = menuResponseNone
-			go saveFileAs()
+			go saveFileAs(prt, &fileName, img, &saved)
 		case menuResponseViewChannels:
 			response = menuResponseNone
 			channelsVisible = !channelsVisible
@@ -371,6 +315,64 @@ func run() {
 
 		win.Update()
 	}
+}
+
+func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool) {
+	out, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		prt.Errorf("failed to save: %v", err)
+		return
+	}
+
+	defer out.Close()
+	if filepath.Ext(fileName) == ".exr" {
+		err = openexr.WriteHDR(out, img)
+	} else if filepath.Ext(fileName) == ".dds" {
+		err = dds.WriteHDR(out, img)
+	} else {
+		prt.Errorf("only saving to .exr or .dds implemented currently")
+		return
+	}
+	if err != nil {
+		prt.Errorf("failed to write img to %s: %v", fileName, err)
+		return
+	}
+	length, err := out.Seek(0, io.SeekCurrent)
+	if err == nil {
+		out.Truncate(length)
+	}
+	*saved = true
+}
+
+func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool) {
+	nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Save()
+	if err == dialog.ErrCancelled {
+		return
+	} else if err != nil {
+		prt.Errorf("%v", err)
+		return
+	}
+	*fileName = nextFileName
+	saveFile(prt, *fileName, img, saved)
+}
+
+func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting) {
+	nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Load()
+	if err == dialog.ErrCancelled {
+		return
+	} else if err != nil {
+		prt.Errorf("%v", err)
+		return
+	}
+	nextImg, err := loadImage(nextFileName)
+	if err != nil {
+		prt.Errorf("Failed to load '%s': %v", nextFileName, err)
+		return
+	}
+	*fileName = nextFileName
+	*img = nextImg
+	*refreshSprite = true
+	*lastChannel = hdrColors.GraySettingNone
 }
 
 func getPixelCoords(camera pixel.Matrix, spriteCenter pixel.Vec, mousePosition pixel.Vec) (x, y int) {
