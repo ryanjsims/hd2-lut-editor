@@ -46,27 +46,9 @@ const (
 	menuResponseViewGrid     menuResponse = 8
 )
 
-type dialogResponse uint8
-
-const (
-	dialogResponseNone    dialogResponse = 0
-	dialogResponseConfirm dialogResponse = 1
-	dialogResponseDeny    dialogResponse = 2
-)
-
-type newImageState uint8
-
-const (
-	newImageStateNone     newImageState = 0
-	newImageStateConfirm  newImageState = 1
-	newImageStateSettings newImageState = 2
-)
-
-type newImageStateMachine struct {
-	State      newImageState
-	Width      int32
-	Height     int32
-	ModelIndex int
+type undoRedoState struct {
+	filename string
+	saved    bool
 }
 
 const baseTitle string = "Helldiver 2 LUT Editor"
@@ -133,30 +115,26 @@ func run() {
 	ui := pixelui.New(win, &Atlas, 0)
 
 	var (
-		camPos                                = pixel.ZV
-		camZoom                               = 24.0
-		camZoomSpeed                          = 1.05
-		dragStart                             = pixel.ZV
-		currColor                             = [4]float32{0.0, 0.0, 0.0, 0.0}
-		precision       int32                 = 3
-		fileName        string                = ""
-		saved           bool                  = true
-		refreshSprite   bool                  = false
-		channelsVisible bool                  = true
-		colorVisible    bool                  = true
-		gridVisible     bool                  = true
-		response        menuResponse          = menuResponseNone
-		viewedChannel   hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
-		lastChannel     hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
-		smNewImage      newImageStateMachine
+		camPos                   = pixel.ZV
+		camZoom                  = 24.0
+		camZoomSpeed             = 1.05
+		dragStart                = pixel.ZV
+		currColor                = [4]float32{0.0, 0.0, 0.0, 0.0}
+		precision         int32  = 3
+		fileName          string = ""
+		saved             bool   = true
+		refreshSprite     bool   = false
+		channelsVisible   bool   = true
+		colorVisible      bool   = true
+		gridVisible       bool   = true
+		newImageConfirm   bool
+		newImageWidth     int32                 = 23
+		newImageHeight    int32                 = 8
+		newImagePrecision int                   = 0
+		response          menuResponse          = menuResponseNone
+		viewedChannel     hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
+		lastChannel       hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
 	)
-
-	smNewImage = newImageStateMachine{
-		State:      newImageStateNone,
-		Width:      23,
-		Height:     8,
-		ModelIndex: 0,
-	}
 
 	var img image.Image
 	if imagePath != nil && len(*imagePath) > 0 {
@@ -167,8 +145,12 @@ func run() {
 			img = nil
 		} else {
 			lastChannel = hdrColors.GraySettingNone
+			newImageWidth = int32(img.Bounds().Dx())
+			newImageHeight = int32(img.Bounds().Dy())
 		}
 	}
+
+	newImageConfirm = img == nil
 
 	var pic *pixel.PictureData
 	var sprite *pixel.Sprite
@@ -233,13 +215,7 @@ func run() {
 
 		switch response {
 		case menuResponseImageNew:
-			if smNewImage.State == newImageStateNone && len(fileName) != 0 {
-				smNewImage.State = newImageStateConfirm
-			} else if smNewImage.State == newImageStateNone {
-				smNewImage.State = newImageStateSettings
-			}
-			smNewImage.handleNewImageStateMachine(win, &img, &refreshSprite, &saved, &fileName, &lastChannel)
-			if smNewImage.State == newImageStateNone {
+			if createNewImage(&img, &newImageConfirm, &refreshSprite, &saved, &fileName, &lastChannel, &newImageWidth, &newImageHeight, &newImagePrecision) {
 				response = menuResponseNone
 			}
 		case menuResponseImageSave:
@@ -483,46 +459,32 @@ func drawStatusBar(x, y int, color [4]float32) {
 	}
 }
 
-func (st *newImageStateMachine) handleNewImageStateMachine(win *opengl.Window, img *image.Image, refreshSprite *bool, saved *bool, fileName *string, lastChannel *hdrColors.GraySetting) {
+func createNewImage(img *image.Image, newImageConfirm, refreshSprite, saved *bool, fileName *string, lastChannel *hdrColors.GraySetting, width, height *int32, precision *int) bool {
+	viewport := imgui.MainViewport()
 	windowSize := imgui.Vec2{
-		X: 0.2 * float32(win.Bounds().W()),
-		Y: 0.2 * float32(win.Bounds().H()),
+		X: 0.2 * viewport.Size().X,
+		Y: 0.2 * viewport.Size().Y,
 	}
-	switch st.State {
-	case newImageStateConfirm:
-		centerWindow(win, windowSize)
-		resp := confirmationDialog(windowSize, "Create new file?", "New File", "Confirm", "Cancel")
-		switch resp {
-		case dialogResponseDeny:
-			st.State = newImageStateNone
-		case dialogResponseConfirm:
-			st.State = newImageStateSettings
-		default:
-		}
-		return
-	case newImageStateSettings:
-		//var model color.Model
-		centerWindow(win, windowSize)
-		resp := newImageDialog(st, windowSize)
-		st.Width = max(st.Width, 1)
-		st.Height = max(st.Height, 1)
-		if resp == dialogResponseNone {
-			return
-		}
-		if resp == dialogResponseConfirm {
-			switch st.ModelIndex {
+	var responded bool
+	centerWindow(windowSize)
+	if *newImageConfirm || confirmationDialog(windowSize, "Create new file?", "New File", "Confirm", "Cancel", &responded) {
+		if newImageDialog(width, height, precision, windowSize, &responded) {
+			*width = max(*width, 1)
+			*height = max(*height, 1)
+			switch *precision {
 			case 0:
-				*img = hdrColors.NewNRGBA128FImage(image.Rect(0, 0, int(st.Width), int(st.Height)))
+				*img = hdrColors.NewNRGBA128FImage(image.Rect(0, 0, int(*width), int(*height)))
 			case 1:
-				*img = hdrColors.NewNRGBA64FImage(image.Rect(0, 0, int(st.Width), int(st.Height)))
+				*img = hdrColors.NewNRGBA64FImage(image.Rect(0, 0, int(*width), int(*height)))
 			}
 			*refreshSprite = true
 			*saved = false
 			*fileName = "(new)"
 			*lastChannel = hdrColors.GraySettingNone
 		}
-		st.State = newImageStateNone
+		*newImageConfirm = !responded || *img == nil
 	}
+	return responded
 }
 
 func getGrayable(img image.Image) (hdrColors.Grayable, bool) {
@@ -701,16 +663,17 @@ func hdrColorToFloats(prt *app.Printer, pxColor color.Color, colorModel color.Mo
 	return color
 }
 
-func centerWindow(win *opengl.Window, windowSize imgui.Vec2) {
+func centerWindow(windowSize imgui.Vec2) {
+	viewport := imgui.MainViewport()
 	imgui.SetNextWindowPos(imgui.Vec2{
-		X: 0.5 * (float32(win.Bounds().W()) - windowSize.X),
-		Y: 0.5 * (float32(win.Bounds().H()) - windowSize.Y),
+		X: 0.5 * (viewport.Size().X - windowSize.X),
+		Y: 0.5 * (viewport.Size().Y - windowSize.Y),
 	})
 	imgui.SetNextWindowSize(windowSize)
 }
 
-func confirmationDialog(windowSize imgui.Vec2, text, title, confirm, deny string) dialogResponse {
-	response := dialogResponseNone
+func confirmationDialog(windowSize imgui.Vec2, text, title, confirm, deny string, responded *bool) (response bool) {
+	*responded = false
 	imgui.BeginV(title, nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoCollapse)
 
 	imgui.SetCursorPos(imgui.Vec2{
@@ -729,7 +692,8 @@ func confirmationDialog(windowSize imgui.Vec2, text, title, confirm, deny string
 	}
 
 	if imgui.ButtonV(confirm, buttonSize) {
-		response = dialogResponseConfirm
+		*responded = true
+		response = true
 	}
 	imgui.SameLine()
 	imgui.SetCursorPos(imgui.Vec2{
@@ -737,20 +701,21 @@ func confirmationDialog(windowSize imgui.Vec2, text, title, confirm, deny string
 		Y: imgui.CursorPosY(),
 	})
 	if imgui.ButtonV(deny, buttonSize) {
-		response = dialogResponseDeny
+		*responded = true
+		response = false
 	}
 	imgui.End()
-	return response
+	return
 }
 
-func newImageDialog(st *newImageStateMachine, windowSize imgui.Vec2) dialogResponse {
-	var resp dialogResponse = dialogResponseNone
+func newImageDialog(width, height *int32, precision *int, windowSize imgui.Vec2, responded *bool) (resp bool) {
+	*responded = false
 	imgui.BeginV("New file settings", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoCollapse)
-	imgui.InputInt("Width", &st.Width)
-	imgui.InputInt("Height", &st.Height)
-	imgui.RadioButtonInt("Float", &st.ModelIndex, 0)
+	imgui.InputInt("Width", width)
+	imgui.InputInt("Height", height)
+	imgui.RadioButtonInt("Float", precision, 0)
 	imgui.SameLine()
-	imgui.RadioButtonInt("Half", &st.ModelIndex, 1)
+	imgui.RadioButtonInt("Half", precision, 1)
 	buttonSize := imgui.Vec2{
 		X: windowSize.X * 0.3,
 		Y: windowSize.Y * 0.2,
@@ -760,7 +725,8 @@ func newImageDialog(st *newImageStateMachine, windowSize imgui.Vec2) dialogRespo
 		Y: windowSize.Y * .75,
 	})
 	if imgui.ButtonV("OK", buttonSize) {
-		resp = dialogResponseConfirm
+		*responded = true
+		resp = true
 	}
 	imgui.SameLine()
 	imgui.SetCursorPos(imgui.Vec2{
@@ -768,10 +734,11 @@ func newImageDialog(st *newImageStateMachine, windowSize imgui.Vec2) dialogRespo
 		Y: imgui.CursorPosY(),
 	})
 	if imgui.ButtonV("Cancel", buttonSize) {
-		resp = dialogResponseDeny
+		*responded = true
+		resp = false
 	}
 	imgui.End()
-	return resp
+	return
 }
 
 func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible bool) menuResponse {
