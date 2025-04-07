@@ -12,9 +12,9 @@ Latest release is available [here](https://github.com/ryanjsims/hd2-lut-editor/r
 
 You can open a DDS or OpenEXR image via the File menu, or if you run the editor from the command-line you may provide a path to an image to open.
 
-Left click sets the hovered pixel to the current color, and right click selects the hovered pixel's color.
+Left click sets the hovered pixel to the current color, and right click selects the hovered pixel's color. Ctrl-Z to undo, Ctrl-Shift-Z to redo.
 
-If the program crashes, there should be a message about what 
+If the program crashes, there should be a message about what happened in `lut-editor.log` located in the same directory as `lut-editor.exe`.
 
 ## Building
 ### Windows
@@ -22,6 +22,5 @@ If the program crashes, there should be a message about what
 
 ## Future Plans (with no particular ETA)
 
-* Undo/Redo stack
 * Copy/Paste areas of pixels
 * Help window integrating info from the guide
