@@ -22,7 +22,6 @@ import (
 	"github.com/jwalton/go-supportscolor"
 	"github.com/ryanjsims/hd2-lut-editor/app"
 	"github.com/ryanjsims/hd2-lut-editor/dds"
-	_ "github.com/ryanjsims/hd2-lut-editor/dds"
 	"github.com/ryanjsims/hd2-lut-editor/hdrColors"
 	"github.com/ryanjsims/hd2-lut-editor/openexr"
 	"github.com/sqweek/dialog"
@@ -490,7 +489,7 @@ func (st *newImageStateMachine) handleNewImageStateMachine(win *opengl.Window, i
 	switch st.State {
 	case newImageStateConfirm:
 		centerWindow(win, windowSize)
-		resp := confirmationDialog(win, windowSize, "Create new file?", "New File", "Confirm", "Cancel")
+		resp := confirmationDialog(windowSize, "Create new file?", "New File", "Confirm", "Cancel")
 		switch resp {
 		case dialogResponseDeny:
 			st.State = newImageStateNone
@@ -708,7 +707,7 @@ func centerWindow(win *opengl.Window, windowSize imgui.Vec2) {
 	imgui.SetNextWindowSize(windowSize)
 }
 
-func confirmationDialog(win *opengl.Window, windowSize imgui.Vec2, text, title, confirm, deny string) dialogResponse {
+func confirmationDialog(windowSize imgui.Vec2, text, title, confirm, deny string) dialogResponse {
 	response := dialogResponseNone
 	imgui.BeginV(title, nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoCollapse)
 
