@@ -56,6 +56,7 @@ type undoRedoState struct {
 	filename string
 	saved    bool
 	img      []byte
+	color    [4]float32
 }
 
 type undoRedoStack struct {
@@ -73,24 +74,27 @@ func (u *undoRedoStack) Clear() {
 	u.redoStack = make([]undoRedoState, 0)
 }
 
-func (u *undoRedoStack) Push(action, filename string, saved bool, img image.Image) {
+func (u *undoRedoStack) Push(action, filename string, saved bool, img image.Image, currColor [4]float32) {
 	undoState := undoRedoState{
 		action:   action,
 		filename: filename,
 		saved:    saved,
 		img:      make([]byte, 0),
+		color:    currColor,
 	}
-	buf := &bytes.Buffer{}
-	openexr.WriteHDR(buf, img)
-	undoState.img = append(undoState.img, buf.Bytes()...)
+	if img != nil {
+		buf := &bytes.Buffer{}
+		openexr.WriteHDR(buf, img)
+		undoState.img = append(undoState.img, buf.Bytes()...)
+	}
 	u.undoStack = append(u.undoStack, undoState)
 }
 
-func (u *undoRedoStack) DelayedPush(d time.Duration, action string, filename *string, saved *bool, img *image.Image) {
+func (u *undoRedoStack) DelayedPush(d time.Duration, action string, filename *string, saved *bool, img *image.Image, currColor *[4]float32) {
 	if u.timer != nil {
 		u.timer.Stop()
 	}
-	u.timer = time.AfterFunc(d, func() { u.Push(action, *filename, *saved, *img) })
+	u.timer = time.AfterFunc(d, func() { u.Push(action, *filename, *saved, *img, *currColor) })
 }
 
 func (u *undoRedoStack) Undo(index int) (*undoRedoState, error) {
@@ -215,7 +219,7 @@ func run() {
 			lastChannel = hdrColors.GraySettingNone
 			newImageWidth = int32(img.Bounds().Dx())
 			newImageHeight = int32(img.Bounds().Dy())
-			undoStack.Push("Load File", *imagePath, true, img)
+			undoStack.Push("Load File", *imagePath, true, img, currColor)
 		}
 	}
 
@@ -260,6 +264,7 @@ func run() {
 		if ui.Pressed(pixel.MouseButtonRight) && sprite != nil {
 			x, y := getPixelCoords(cam, sprite.Frame().Center(), win.MousePosition())
 			currColor = getImgColorAtCoords(prt, img, x, y, viewedChannel)
+			undoStack.DelayedPush(1*time.Second, "Pick Color", &fileName, &saved, &img, &currColor)
 		}
 
 		if ui.Pressed(pixel.MouseButtonLeft) && sprite != nil {
@@ -269,19 +274,19 @@ func run() {
 				setHDRFromFloats(x, y, currColor, img)
 				refreshSprite = true
 				saved = false
-				undoStack.DelayedPush(1*time.Second, "Draw", &fileName, &saved, &img)
+				undoStack.DelayedPush(1*time.Second, "Draw", &fileName, &saved, &img, &currColor)
 			}
 		}
 
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			!(ui.Pressed(pixel.KeyLeftShift) || ui.Pressed(pixel.KeyRightShift)) &&
 			ui.JustPressed(pixel.KeyZ) && len(undoStack.undoStack) > 1 {
-			handleUndo(prt, &undoStack, max(0, len(undoStack.undoStack)-2), &img, &refreshSprite, &lastChannel)
+			handleUndo(prt, &undoStack, max(0, len(undoStack.undoStack)-2), &img, &refreshSprite, &lastChannel, &currColor)
 		}
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			(ui.Pressed(pixel.KeyLeftShift) || ui.Pressed(pixel.KeyRightShift)) &&
 			ui.JustPressed(pixel.KeyZ) && len(undoStack.redoStack) > 0 {
-			handleRedo(prt, &undoStack, max(0, len(undoStack.redoStack)-1), &img, &refreshSprite, &lastChannel)
+			handleRedo(prt, &undoStack, max(0, len(undoStack.redoStack)-1), &img, &refreshSprite, &lastChannel, &currColor)
 		}
 
 		win.SetMatrix(cam)
@@ -300,22 +305,22 @@ func run() {
 				response = menuResponseNone
 				if img != nil {
 					undoStack.Clear()
-					undoStack.Push("New Image", fileName, saved, img)
+					undoStack.Push("New Image", fileName, saved, img, currColor)
 				}
 			}
 		case menuResponseImageSave:
 			response = menuResponseNone
 			if fileName == "(new)" || len(fileName) == 0 {
-				go saveFileAs(prt, &fileName, img, &saved, &undoStack)
+				go saveFileAs(prt, &fileName, img, &saved, currColor, &undoStack)
 			} else {
-				go saveFile(prt, fileName, img, &saved, &undoStack)
+				go saveFile(prt, fileName, img, &saved, currColor, &undoStack)
 			}
 		case menuResponseImageOpen:
 			response = menuResponseNone
-			go openFile(prt, &fileName, &img, &refreshSprite, &lastChannel, &undoStack)
+			go openFile(prt, &fileName, &img, &refreshSprite, &lastChannel, currColor, &undoStack)
 		case menuResponseImageSaveAs:
 			response = menuResponseNone
-			go saveFileAs(prt, &fileName, img, &saved, &undoStack)
+			go saveFileAs(prt, &fileName, img, &saved, currColor, &undoStack)
 		case menuResponseViewChannels:
 			response = menuResponseNone
 			channelsVisible = !channelsVisible
@@ -327,10 +332,10 @@ func run() {
 			gridVisible = !gridVisible
 		case menuResponseUndo:
 			response = menuResponseNone
-			handleUndo(prt, &undoStack, index, &img, &refreshSprite, &lastChannel)
+			handleUndo(prt, &undoStack, index, &img, &refreshSprite, &lastChannel, &currColor)
 		case menuResponseRedo:
 			response = menuResponseNone
-			handleRedo(prt, &undoStack, index, &img, &refreshSprite, &lastChannel)
+			handleRedo(prt, &undoStack, index, &img, &refreshSprite, &lastChannel, &currColor)
 		default:
 			// Do nothing
 			response = menuResponseNone
@@ -341,7 +346,11 @@ func run() {
 		}
 
 		if colorVisible {
+			prevColor := currColor
 			drawColorWindow(&precision, &currColor, &colorVisible)
+			if prevColor != currColor {
+				undoStack.DelayedPush(1*time.Second, "Edit Color", &fileName, &saved, &img, &currColor)
+			}
 		}
 		if channelsVisible {
 			drawChannelWindow(&viewedChannel, &channelsVisible)
@@ -384,51 +393,45 @@ func run() {
 	}
 }
 
-func handleUndo(prt *app.Printer, undoStack *undoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting) {
+func handleUndo(prt *app.Printer, undoStack *undoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
 	state, err := undoStack.Undo(index)
 	if err != nil {
 		prt.Errorf("%v", err)
 		return
 	}
-	bufR := bufio.NewReader(bytes.NewBuffer(state.img))
-	exr, err := openexr.LoadOpenEXR(*bufR)
-	if err != nil {
-		prt.Errorf("%v", err)
-		return
-	}
-	newImg, err := exr.HdrImage()
-	if err != nil {
-		prt.Errorf("%v", err)
-		return
-	}
-	*img = newImg
-	*refreshSprite = true
-	*lastChannel = hdrColors.GraySettingAlpha
+	restoreState(prt, state, img, refreshSprite, lastChannel, currColor)
 }
 
-func handleRedo(prt *app.Printer, undoStack *undoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting) {
+func handleRedo(prt *app.Printer, undoStack *undoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
 	state, err := undoStack.Redo(index)
 	if err != nil {
 		prt.Errorf("%v", err)
 		return
 	}
-	bufR := bufio.NewReader(bytes.NewBuffer(state.img))
-	exr, err := openexr.LoadOpenEXR(*bufR)
-	if err != nil {
-		prt.Errorf("%v", err)
-		return
-	}
-	newImg, err := exr.HdrImage()
-	if err != nil {
-		prt.Errorf("%v", err)
-		return
-	}
-	*img = newImg
-	*refreshSprite = true
-	*lastChannel = hdrColors.GraySettingAlpha
+	restoreState(prt, state, img, refreshSprite, lastChannel, currColor)
 }
 
-func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, undoStack *undoRedoStack) {
+func restoreState(prt *app.Printer, state *undoRedoState, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
+	if len(state.img) > 0 {
+		bufR := bufio.NewReader(bytes.NewBuffer(state.img))
+		exr, err := openexr.LoadOpenEXR(*bufR)
+		if err != nil {
+			prt.Errorf("%v", err)
+			return
+		}
+		newImg, err := exr.HdrImage()
+		if err != nil {
+			prt.Errorf("%v", err)
+			return
+		}
+		*img = newImg
+	}
+	*refreshSprite = true
+	*lastChannel = hdrColors.GraySettingAlpha
+	*currColor = state.color
+}
+
+func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, currColor [4]float32, undoStack *undoRedoStack) {
 	out, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		prt.Errorf("failed to save: %v", err)
@@ -453,10 +456,10 @@ func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, u
 		out.Truncate(length)
 	}
 	*saved = true
-	undoStack.Push("Save File", fileName, true, img)
+	undoStack.Push("Save File", fileName, true, img, currColor)
 }
 
-func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool, undoStack *undoRedoStack) {
+func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool, currColor [4]float32, undoStack *undoRedoStack) {
 	nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Save()
 	if err == dialog.ErrCancelled {
 		return
@@ -465,10 +468,10 @@ func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool
 		return
 	}
 	*fileName = nextFileName
-	saveFile(prt, *fileName, img, saved, undoStack)
+	saveFile(prt, *fileName, img, saved, currColor, undoStack)
 }
 
-func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, undoStack *undoRedoStack) {
+func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor [4]float32, undoStack *undoRedoStack) {
 	nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Load()
 	if err == dialog.ErrCancelled {
 		return
@@ -486,7 +489,7 @@ func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprit
 	*refreshSprite = true
 	*lastChannel = hdrColors.GraySettingNone
 	undoStack.Clear()
-	undoStack.Push("Load File", *fileName, true, *img)
+	undoStack.Push("Load File", *fileName, true, *img, currColor)
 }
 
 func getPixelCoords(camera pixel.Matrix, spriteCenter pixel.Vec, mousePosition pixel.Vec) (x, y int) {
@@ -626,6 +629,9 @@ func createNewImage(img *image.Image, newImageConfirm, refreshSprite, saved *boo
 }
 
 func getGrayable(img image.Image) (hdrColors.Grayable, bool) {
+	if img == nil {
+		return nil, false
+	}
 	var grayable hdrColors.Grayable
 	var ok bool
 	var ddsImg *dds.DDS
