@@ -30,6 +30,8 @@ github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINE
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/ryanjsims/pixelui/v2 v2.0.2 h1:NutoB1CwYu/g50gNiiOocDs5xYBhnI+d5xzxA38EDGQ=
 github.com/ryanjsims/pixelui/v2 v2.0.2/go.mod h1:lBXLFQ6c3/ckt9pSSmDYCQMv4Js8PbY2ieFlxnaDqpE=
+github.com/ryanjsims/pixelui/v2 v2.0.3 h1:He/UcQxMbDkspC9XL2Bga8QPmecjzZjSEUu9TDF0A3M=
+github.com/ryanjsims/pixelui/v2 v2.0.3/go.mod h1:lBXLFQ6c3/ckt9pSSmDYCQMv4Js8PbY2ieFlxnaDqpE=
 github.com/sqweek/dialog v0.0.0-20240226140203-065105509627 h1:2JL2wmHXWIAxDofCK+AdkFi1KEg3dgkefCsm7isADzQ=
 github.com/sqweek/dialog v0.0.0-20240226140203-065105509627/go.mod h1:/qNPSY91qTz/8TgHEMioAUc6q7+3SOybeKczHMXFcXw=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
