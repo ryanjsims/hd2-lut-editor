@@ -34,6 +34,8 @@ github.com/ryanjsims/pixelui/v2 v2.0.3 h1:He/UcQxMbDkspC9XL2Bga8QPmecjzZjSEUu9TD
 github.com/ryanjsims/pixelui/v2 v2.0.3/go.mod h1:lBXLFQ6c3/ckt9pSSmDYCQMv4Js8PbY2ieFlxnaDqpE=
 github.com/ryanjsims/pixelui/v2 v2.0.4 h1:5LkEnSrEPnM3seSWTyx7vJKf3Y+EcnAhG1dCU+IyFr4=
 github.com/ryanjsims/pixelui/v2 v2.0.4/go.mod h1:dt02i2uunvjGbmvUnZnEjI8O4smH1wbYI8DanoXCxeA=
+github.com/ryanjsims/pixelui/v2 v2.0.5 h1:Lv1KQ+rHUQi8RPpXIo8vlm8hBiCUGj9iw1Jbpi9aP9k=
+github.com/ryanjsims/pixelui/v2 v2.0.5/go.mod h1:dt02i2uunvjGbmvUnZnEjI8O4smH1wbYI8DanoXCxeA=
 github.com/sqweek/dialog v0.0.0-20240226140203-065105509627 h1:2JL2wmHXWIAxDofCK+AdkFi1KEg3dgkefCsm7isADzQ=
 github.com/sqweek/dialog v0.0.0-20240226140203-065105509627/go.mod h1:/qNPSY91qTz/8TgHEMioAUc6q7+3SOybeKczHMXFcXw=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

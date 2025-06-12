@@ -4,7 +4,7 @@ go 1.24.0
 
 toolchain go1.24.4
 
-replace github.com/gopxl/pixelui/v2 => github.com/ryanjsims/pixelui/v2 v2.0.4
+replace github.com/gopxl/pixelui/v2 => github.com/ryanjsims/pixelui/v2 v2.0.5
 
 require (
 	github.com/gopxl/pixel/v2 v2.3.0
