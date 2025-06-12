@@ -9,7 +9,7 @@ import (
 	"github.com/x448/float16"
 )
 
-type GraySetting int
+type GraySetting int32
 
 const (
 	GraySettingNone    GraySetting = 0
