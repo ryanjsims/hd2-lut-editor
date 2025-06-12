@@ -4,13 +4,13 @@ go 1.24.0
 
 toolchain go1.24.4
 
-replace github.com/gopxl/pixelui/v2 => github.com/ryanjsims/pixelui/v2 v2.0.3
+replace github.com/gopxl/pixelui/v2 => github.com/ryanjsims/pixelui/v2 v2.0.4
 
 require (
-	github.com/AllenDang/cimgui-go v1.3.1
 	github.com/gopxl/pixel/v2 v2.3.0
 	github.com/gopxl/pixelui/v2 v2.0.0
 	github.com/hellflame/argparse v1.12.0
+	github.com/inkyblackness/imgui-go/v4 v4.7.0
 	github.com/jwalton/go-supportscolor v1.2.0
 	github.com/sqweek/dialog v0.0.0-20240226140203-065105509627
 	github.com/x448/float16 v0.8.4
@@ -23,7 +23,6 @@ require (
 	github.com/go-gl/mathgl v1.1.0 // indirect
 	github.com/gopxl/glhf/v2 v2.1.0 // indirect
 	github.com/gopxl/mainthread/v2 v2.1.1 // indirect
-	github.com/inkyblackness/imgui-go/v4 v4.7.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/xypwn/filediver v0.4.3 // indirect
 	golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa // indirect

@@ -15,13 +15,13 @@ import (
 	"slices"
 	"time"
 
-	"github.com/AllenDang/cimgui-go/imgui"
 	"github.com/gopxl/pixel/v2"
 	"github.com/gopxl/pixel/v2/backends/opengl"
 	"github.com/gopxl/pixel/v2/ext/atlas"
 	"github.com/gopxl/pixel/v2/ext/imdraw"
 	"github.com/gopxl/pixelui/v2"
 	"github.com/hellflame/argparse"
+	"github.com/inkyblackness/imgui-go/v4"
 	"github.com/jwalton/go-supportscolor"
 	"github.com/ryanjsims/hd2-lut-editor/app"
 	"github.com/ryanjsims/hd2-lut-editor/dds"
@@ -198,7 +198,7 @@ func run() {
 		newImageConfirm   bool
 		newImageWidth     int32                 = 23
 		newImageHeight    int32                 = 8
-		newImagePrecision int32                 = 0
+		newImagePrecision int                   = 0
 		response          menuResponse          = menuResponseNone
 		viewedChannel     hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
 		lastChannel       hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
@@ -520,12 +520,12 @@ func getImgColorAtCoords(prt *app.Printer, img image.Image, x, y int, viewedChan
 func drawChannelWindow(viewedChannel *hdrColors.GraySetting, visible *bool) {
 	imgui.BeginV("Channel(s)", visible, imgui.WindowFlagsAlwaysAutoResize|imgui.WindowFlagsNoCollapse)
 	{
-		imgui.RadioButtonIntPtr("RGB", (*int32)(viewedChannel), int32(hdrColors.GraySettingNoAlpha))
-		imgui.RadioButtonIntPtr("RGBA", (*int32)(viewedChannel), int32(hdrColors.GraySettingNone))
-		imgui.RadioButtonIntPtr("Red", (*int32)(viewedChannel), int32(hdrColors.GraySettingRed))
-		imgui.RadioButtonIntPtr("Green", (*int32)(viewedChannel), int32(hdrColors.GraySettingBlue))
-		imgui.RadioButtonIntPtr("Blue", (*int32)(viewedChannel), int32(hdrColors.GraySettingGreen))
-		imgui.RadioButtonIntPtr("Alpha   ", (*int32)(viewedChannel), int32(hdrColors.GraySettingAlpha))
+		imgui.RadioButtonInt("RGB", (*int)(viewedChannel), int(hdrColors.GraySettingNoAlpha))
+		imgui.RadioButtonInt("RGBA", (*int)(viewedChannel), int(hdrColors.GraySettingNone))
+		imgui.RadioButtonInt("Red", (*int)(viewedChannel), int(hdrColors.GraySettingRed))
+		imgui.RadioButtonInt("Green", (*int)(viewedChannel), int(hdrColors.GraySettingBlue))
+		imgui.RadioButtonInt("Blue", (*int)(viewedChannel), int(hdrColors.GraySettingGreen))
+		imgui.RadioButtonInt("Alpha   ", (*int)(viewedChannel), int(hdrColors.GraySettingAlpha))
 	}
 	imgui.End()
 }
@@ -600,7 +600,7 @@ func drawStatusBar(x, y int, color [4]float32) {
 	}
 }
 
-func createNewImage(img *image.Image, newImageConfirm, refreshSprite, saved *bool, fileName *string, lastChannel *hdrColors.GraySetting, width, height *int32, precision *int32) bool {
+func createNewImage(img *image.Image, newImageConfirm, refreshSprite, saved *bool, fileName *string, lastChannel *hdrColors.GraySetting, width, height *int32, precision *int) bool {
 	viewport := imgui.MainViewport()
 	windowSize := imgui.Vec2{
 		X: 0.2 * viewport.Size().X,
@@ -691,7 +691,7 @@ func loadImage(path string) (image.Image, error) {
 
 func textCentered(text string) {
 	windowWidth := imgui.WindowWidth()
-	textWidth := imgui.CalcTextSizeV(text, false, windowWidth).X
+	textWidth := imgui.CalcTextSize(text, false, windowWidth).X
 
 	imgui.SetCursorPos(imgui.Vec2{
 		X: (windowWidth - textWidth) * 0.5,
@@ -852,14 +852,14 @@ func confirmationDialog(windowSize imgui.Vec2, text, title, confirm, deny string
 	return
 }
 
-func newImageDialog(width, height *int32, precision *int32, windowSize imgui.Vec2, responded *bool) (resp bool) {
+func newImageDialog(width, height *int32, precision *int, windowSize imgui.Vec2, responded *bool) (resp bool) {
 	*responded = false
 	imgui.BeginV("New file settings", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoCollapse)
 	imgui.InputInt("Width", width)
 	imgui.InputInt("Height", height)
-	imgui.RadioButtonIntPtr("Float", precision, 0)
+	imgui.RadioButtonInt("Float", precision, 0)
 	imgui.SameLine()
-	imgui.RadioButtonIntPtr("Half", precision, 1)
+	imgui.RadioButtonInt("Half", precision, 1)
 	buttonSize := imgui.Vec2{
 		X: windowSize.X * 0.3,
 		Y: windowSize.Y * 0.2,
@@ -908,42 +908,42 @@ func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible
 
 func showFileMenu(img image.Image) menuResponse {
 	response := menuResponseNone
-	if imgui.MenuItemBool("New") {
+	if imgui.MenuItem("New") {
 		response = menuResponseImageNew
 	}
-	if imgui.MenuItemBool("Open...") {
+	if imgui.MenuItem("Open...") {
 		response = menuResponseImageOpen
 	}
-	if imgui.MenuItemBoolV("Save", "", false, img != nil) {
+	if imgui.MenuItemV("Save", "", false, img != nil) {
 		response = menuResponseImageSave
 	}
-	if imgui.MenuItemBoolV("Save As...", "", false, img != nil) {
+	if imgui.MenuItemV("Save As...", "", false, img != nil) {
 		response = menuResponseImageSaveAs
 	}
 	return response
 }
 
 func showEditMenu(undoStack *undoRedoStack) (resp menuResponse, index int) {
-	if imgui.MenuItemBoolV("Undo", "ctrl-z", false, len(undoStack.undoStack) > 0) {
+	if imgui.MenuItemV("Undo", "ctrl-z", false, len(undoStack.undoStack) > 0) {
 		resp = menuResponseUndo
 		index = max(len(undoStack.undoStack)-2, 0)
 	}
 	if imgui.BeginMenuV("Undo...", len(undoStack.undoStack) > 0) {
 		for i, undoItem := range undoStack.undoStack {
-			if imgui.MenuItemBool(undoItem.action) {
+			if imgui.MenuItem(undoItem.action) {
 				resp = menuResponseUndo
 				index = i
 			}
 		}
 		imgui.EndMenu()
 	}
-	if imgui.MenuItemBoolV("Redo", "ctrl-shift-z", false, len(undoStack.redoStack) > 0) {
+	if imgui.MenuItemV("Redo", "ctrl-shift-z", false, len(undoStack.redoStack) > 0) {
 		resp = menuResponseRedo
 		index = max(len(undoStack.redoStack)-1, 0)
 	}
 	if imgui.BeginMenuV("Redo...", len(undoStack.redoStack) > 0) {
 		for i, redoItem := range undoStack.redoStack {
-			if imgui.MenuItemBool(redoItem.action) {
+			if imgui.MenuItem(redoItem.action) {
 				resp = menuResponseRedo
 				index = i
 			}
@@ -955,13 +955,13 @@ func showEditMenu(undoStack *undoRedoStack) (resp menuResponse, index int) {
 
 func showViewMenu(channelsVisible, colorVisible, gridVisible bool) menuResponse {
 	response := menuResponseNone
-	if imgui.MenuItemBoolV("Channels", "", channelsVisible, true) {
+	if imgui.MenuItemV("Channels", "", channelsVisible, true) {
 		response = menuResponseViewChannels
 	}
-	if imgui.MenuItemBoolV("Color", "", colorVisible, true) {
+	if imgui.MenuItemV("Color", "", colorVisible, true) {
 		response = menuResponseViewColor
 	}
-	if imgui.MenuItemBoolV("Grid", "", gridVisible, true) {
+	if imgui.MenuItemV("Grid", "", gridVisible, true) {
 		response = menuResponseViewGrid
 	}
 	return response

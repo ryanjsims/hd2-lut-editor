@@ -1,5 +1,3 @@
-github.com/AllenDang/cimgui-go v1.3.1 h1:2f33a7GHJwRofH0CRQbUTXywazfph/K5LQLKyOBv24k=
-github.com/AllenDang/cimgui-go v1.3.1/go.mod h1:Fuj3G2E3zd2bMQxmhuSPSFFl41MwS+MhyZ6DHgYq/YM=
 github.com/TheTitanrain/w32 v0.0.0-20180517000239-4f5cfb03fabf h1:FPsprx82rdrX2jiKyS17BH6IrTmUBYqZa/CXT4uvb+I=
 github.com/TheTitanrain/w32 v0.0.0-20180517000239-4f5cfb03fabf/go.mod h1:peYoMncQljjNS6tZwI9WVyQB3qZS6u79/N3mBOcnd3I=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -28,10 +26,14 @@ github.com/jwalton/go-supportscolor v1.2.0/go.mod h1:hFVUAZV2cWg+WFFC4v8pT2X/S2q
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+github.com/ryanjsims/pixelui/v2 v2.0.1 h1:jSnWFXEPlHnsmWcGElHIalMWoC5q0QpDlf9VMmMDl00=
+github.com/ryanjsims/pixelui/v2 v2.0.1/go.mod h1:71EHgPZyvI2N1HRQlA0kNyzp56d+QAHMN2DU+QS/Io0=
 github.com/ryanjsims/pixelui/v2 v2.0.2 h1:NutoB1CwYu/g50gNiiOocDs5xYBhnI+d5xzxA38EDGQ=
 github.com/ryanjsims/pixelui/v2 v2.0.2/go.mod h1:lBXLFQ6c3/ckt9pSSmDYCQMv4Js8PbY2ieFlxnaDqpE=
 github.com/ryanjsims/pixelui/v2 v2.0.3 h1:He/UcQxMbDkspC9XL2Bga8QPmecjzZjSEUu9TDF0A3M=
 github.com/ryanjsims/pixelui/v2 v2.0.3/go.mod h1:lBXLFQ6c3/ckt9pSSmDYCQMv4Js8PbY2ieFlxnaDqpE=
+github.com/ryanjsims/pixelui/v2 v2.0.4 h1:5LkEnSrEPnM3seSWTyx7vJKf3Y+EcnAhG1dCU+IyFr4=
+github.com/ryanjsims/pixelui/v2 v2.0.4/go.mod h1:dt02i2uunvjGbmvUnZnEjI8O4smH1wbYI8DanoXCxeA=
 github.com/sqweek/dialog v0.0.0-20240226140203-065105509627 h1:2JL2wmHXWIAxDofCK+AdkFi1KEg3dgkefCsm7isADzQ=
 github.com/sqweek/dialog v0.0.0-20240226140203-065105509627/go.mod h1:/qNPSY91qTz/8TgHEMioAUc6q7+3SOybeKczHMXFcXw=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
