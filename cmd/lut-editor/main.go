@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gopxl/pixel/v2"
@@ -38,17 +39,19 @@ var (
 type menuResponse uint8
 
 const (
-	menuResponseNone         menuResponse = 0
-	menuResponseImageOpen    menuResponse = 1
-	menuResponseImageSave    menuResponse = 2
-	menuResponseImageSaveAs  menuResponse = 3
-	menuResponseImageNew     menuResponse = 4
-	menuResponseViewChannels menuResponse = 5
-	menuResponseViewColor    menuResponse = 6
-	menuResponseViewHelp     menuResponse = 7
-	menuResponseViewGrid     menuResponse = 8
-	menuResponseUndo         menuResponse = 9
-	menuResponseRedo         menuResponse = 10
+	menuResponseNone             menuResponse = 0
+	menuResponseImageOpen        menuResponse = 1
+	menuResponseImageSave        menuResponse = 2
+	menuResponseImageSaveAs      menuResponse = 3
+	menuResponseImageNew         menuResponse = 4
+	menuResponseViewChannels     menuResponse = 5
+	menuResponseViewColor        menuResponse = 6
+	menuResponseViewHelp         menuResponse = 7
+	menuResponseViewGrid         menuResponse = 8
+	menuResponseUndo             menuResponse = 9
+	menuResponseRedo             menuResponse = 10
+	menuResponseBulkConvertToDDS menuResponse = 11
+	menuResponseBulkConvertToEXR menuResponse = 12
 )
 
 type undoRedoState struct {
@@ -321,6 +324,12 @@ func run() {
 		case menuResponseImageSaveAs:
 			response = menuResponseNone
 			go saveFileAs(prt, &fileName, img, &saved, currColor, &undoStack)
+		case menuResponseBulkConvertToDDS:
+			response = menuResponseNone
+			go bulkConvertFiles(prt, true, nil)
+		case menuResponseBulkConvertToEXR:
+			response = menuResponseNone
+			go bulkConvertFiles(prt, false, nil)
 		case menuResponseViewChannels:
 			response = menuResponseNone
 			channelsVisible = !channelsVisible
@@ -431,6 +440,17 @@ func restoreState(prt *app.Printer, state *undoRedoState, img *image.Image, refr
 	*currColor = state.color
 }
 
+func writeImage(out io.Writer, img image.Image, fileName string) (err error) {
+	if filepath.Ext(fileName) == ".exr" {
+		err = openexr.WriteHDR(out, img)
+	} else if filepath.Ext(fileName) == ".dds" {
+		err = dds.WriteHDR(out, img)
+	} else {
+		err = fmt.Errorf("only saving to .exr or .dds implemented currently")
+	}
+	return
+}
+
 func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, currColor [4]float32, undoStack *undoRedoStack) {
 	out, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -439,14 +459,8 @@ func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, c
 	}
 
 	defer out.Close()
-	if filepath.Ext(fileName) == ".exr" {
-		err = openexr.WriteHDR(out, img)
-	} else if filepath.Ext(fileName) == ".dds" {
-		err = dds.WriteHDR(out, img)
-	} else {
-		prt.Errorf("only saving to .exr or .dds implemented currently")
-		return
-	}
+
+	err = writeImage(out, img, fileName)
 	if err != nil {
 		prt.Errorf("failed to write img to %s: %v", fileName, err)
 		return
@@ -469,6 +483,57 @@ func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool
 	}
 	*fileName = nextFileName
 	saveFile(prt, *fileName, img, saved, currColor, undoStack)
+}
+
+func bulkConvertFiles(prt *app.Printer, exrToDDS bool, onProgress func(current, total int, err error)) {
+	var directionString, globStr, outSuffix string
+	if exrToDDS {
+		directionString = "EXR to DDS"
+		globStr = "*.exr"
+		outSuffix = ".dds"
+	} else {
+		directionString = "DDS to EXR"
+		globStr = "*.dds"
+		outSuffix = ".exr"
+	}
+	folderName, err := dialog.Directory().Title(fmt.Sprintf("Select folder to bulk convert %v...", directionString)).Browse()
+	if err == dialog.ErrCancelled {
+		return
+	} else if err != nil {
+		prt.Errorf("bulk convert: failed to get directory: %v", err)
+		return
+	}
+
+	matches, err := filepath.Glob(filepath.Join(folderName, globStr))
+	for idx, path := range matches {
+		convImg, err := loadImage(path)
+		if onProgress != nil && err != nil {
+			onProgress(idx+1, len(matches), err)
+		}
+		if err != nil {
+			prt.Errorf("bulk convert: failed to load %v: %v", path, err)
+			continue
+		}
+
+		convertedPath := strings.TrimSuffix(path, filepath.Ext(path)) + outSuffix
+		out, err := os.OpenFile(convertedPath, os.O_CREATE|os.O_WRONLY, 0644)
+		if onProgress != nil && err != nil {
+			onProgress(idx+1, len(matches), err)
+		}
+		if err != nil {
+			prt.Errorf("bulk convert: failed to open %v: %v", convertedPath, err)
+			continue
+		}
+		defer out.Close()
+
+		err = writeImage(out, convImg, convertedPath)
+		if err != nil {
+			prt.Errorf("bulk convert: failed to write %v: %v", convertedPath, err)
+		}
+		if onProgress != nil {
+			onProgress(idx+1, len(matches), err)
+		}
+	}
 }
 
 func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor [4]float32, undoStack *undoRedoStack) {
@@ -919,6 +984,12 @@ func showFileMenu(img image.Image) menuResponse {
 	}
 	if imgui.MenuItemV("Save As...", "", false, img != nil) {
 		response = menuResponseImageSaveAs
+	}
+	if imgui.MenuItem("Convert to DDS...") {
+		response = menuResponseBulkConvertToDDS
+	}
+	if imgui.MenuItem("Convert to EXR...") {
+		response = menuResponseBulkConvertToEXR
 	}
 	return response
 }

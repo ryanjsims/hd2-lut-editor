@@ -1026,19 +1026,20 @@ func (exr *OpenEXR) HdrImage() (image.Image, error) {
 	var img image.Image
 	var buf []uint8
 	var one []uint8
-	var translatePixel func(r *bytes.Reader, x, y, channel int)
+	var translatePixel func(r *bytes.Reader, x, y, channel int) error
 	switch exr.ColorModel() {
 	case hdrColors.NRGBA128UModel:
 		newImg := hdrColors.NewNRGBA128UImage(exr.Bounds())
 		buf = newImg.Pix
 		img = newImg
-		translatePixel = func(r *bytes.Reader, x, y, channel int) {
+		translatePixel = func(r *bytes.Reader, x, y, channel int) error {
 			var val uint32
 			if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
-				panic(err)
+				return err
 			}
 			offset := newImg.PixOffset(x, y)
 			binary.Encode(buf[offset+channel*4:], binary.LittleEndian, val)
+			return nil
 		}
 		one = make([]uint8, 4)
 		binary.Encode(one, binary.LittleEndian, uint32(0xFFFFFFFF))
@@ -1046,13 +1047,14 @@ func (exr *OpenEXR) HdrImage() (image.Image, error) {
 		newImg := hdrColors.NewNRGBA64FImage(exr.Bounds())
 		buf = newImg.Pix
 		img = newImg
-		translatePixel = func(r *bytes.Reader, x, y, channel int) {
+		translatePixel = func(r *bytes.Reader, x, y, channel int) error {
 			var val float16.Float16
 			if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
-				panic(err)
+				return err
 			}
 			offset := newImg.PixOffset(x, y)
 			binary.Encode(buf[offset+channel*2:], binary.LittleEndian, val)
+			return nil
 		}
 		one = make([]uint8, 2)
 		binary.Encode(one, binary.LittleEndian, float16.Fromfloat32(1.0))
@@ -1060,13 +1062,14 @@ func (exr *OpenEXR) HdrImage() (image.Image, error) {
 		newImg := hdrColors.NewNRGBA128FImage(exr.Bounds())
 		buf = newImg.Pix
 		img = newImg
-		translatePixel = func(r *bytes.Reader, x, y, channel int) {
+		translatePixel = func(r *bytes.Reader, x, y, channel int) error {
 			var val float32
 			if err := binary.Read(r, binary.LittleEndian, &val); err != nil {
-				panic(err)
+				return err
 			}
 			offset := newImg.PixOffset(x, y)
 			binary.Encode(buf[offset+channel*4:], binary.LittleEndian, val)
+			return nil
 		}
 		one = make([]uint8, 4)
 		binary.Encode(one, binary.LittleEndian, 1.0)
@@ -1084,10 +1087,16 @@ func (exr *OpenEXR) HdrImage() (image.Image, error) {
 				for k := 0; k < int(width); k++ {
 					x, y := k, int(scanline.YCoord)+i
 					r.Seek(scanline.offset(x, y, j, int(depth), exr.Channels[j].PixelFmt, exr.DataWindow), io.SeekStart)
-					translatePixel(r, x, y, int(depth)-j-1)
+					err := translatePixel(r, x, y, int(depth)-j-1)
+					if err != nil {
+						return nil, err
+					}
 					if j == 2 && depth == 3 {
 						rone := bytes.NewReader(one)
-						translatePixel(rone, x, y, 3)
+						err := translatePixel(rone, x, y, 3)
+						if err != nil {
+							return nil, err
+						}
 					}
 				}
 			}
