@@ -147,7 +147,6 @@ func (b *backgroundStatus) onProgress(current, total int, err error) {
 	if err != nil {
 		b.Message = fmt.Sprintf("Error: %v", err)
 	}
-	time.Sleep(time.Second)
 }
 
 func (b *backgroundStatus) onComplete(success, failed, total int) {
@@ -558,12 +557,19 @@ func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *backgroundStatus) {
 		globStr = "*.dds"
 		outSuffix = ".exr"
 	}
-	folderName, err := dialog.Directory().Title(fmt.Sprintf("Select folder to bulk convert %v...", directionString)).Browse()
+	cwd, err := os.Getwd()
+	if err != nil {
+		task.onCancel()
+		prt.Errorf("bulk convert: failed to get current working directory: %v", err)
+		return
+	}
+	folderName, err := dialog.Directory().Title(fmt.Sprintf("Select folder to bulk convert %v...", directionString)).SetStartDir(cwd).Browse()
 	if err == dialog.ErrCancelled {
 		task.onCancel()
 		return
 	} else if err != nil {
 		prt.Errorf("bulk convert: failed to get directory: %v", err)
+		task.onCancel()
 		return
 	}
 
