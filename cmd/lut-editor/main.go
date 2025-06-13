@@ -122,6 +122,51 @@ func (u *undoRedoStack) Redo(index int) (*undoRedoState, error) {
 	return &toReturn, nil
 }
 
+type taskStatus uint32
+
+const (
+	taskIdle      taskStatus = 0
+	taskRunning   taskStatus = 1
+	taskFailed    taskStatus = 2
+	taskFinished  taskStatus = 3
+	taskCancelled taskStatus = 4
+)
+
+type backgroundStatus struct {
+	Name     string
+	Message  string
+	Progress int
+	Total    int
+	Status   taskStatus
+}
+
+func (b *backgroundStatus) onProgress(current, total int, err error) {
+	b.Progress = current
+	b.Total = total
+	b.Status = taskRunning
+	if err != nil {
+		b.Message = fmt.Sprintf("Error: %v", err)
+	}
+	time.Sleep(time.Second)
+}
+
+func (b *backgroundStatus) onComplete(success, failed, total int) {
+	b.Progress = success + failed
+	b.Total = total
+	b.Status = taskFinished
+	b.Message = fmt.Sprintf("finished: %v success %v failed %v total", success, failed, total)
+	go func() {
+		time.Sleep(8 * time.Second)
+		b.Status = taskCancelled
+	}()
+}
+
+func (b *backgroundStatus) onCancel() {
+	b.Status = taskCancelled
+}
+
+type taskID uint32
+
 const baseTitle string = "Helldiver 2 LUT Editor"
 
 func run() {
@@ -209,6 +254,7 @@ func run() {
 			undoStack: make([]undoRedoState, 0),
 			redoStack: make([]undoRedoState, 0),
 		}
+		backgroundTasks = make(map[taskID]*backgroundStatus)
 	)
 
 	var img image.Image
@@ -326,10 +372,26 @@ func run() {
 			go saveFileAs(prt, &fileName, img, &saved, currColor, &undoStack)
 		case menuResponseBulkConvertToDDS:
 			response = menuResponseNone
-			go bulkConvertFiles(prt, true, nil)
+			taskIdx := len(backgroundTasks)
+			backgroundTasks[taskID(taskIdx)] = &backgroundStatus{
+				Name:     "Bulk DDS->EXR Conversion",
+				Message:  "",
+				Progress: 0,
+				Total:    -1,
+				Status:   taskIdle,
+			}
+			go bulkConvertFiles(prt, true, backgroundTasks[taskID(taskIdx)])
 		case menuResponseBulkConvertToEXR:
 			response = menuResponseNone
-			go bulkConvertFiles(prt, false, nil)
+			taskIdx := len(backgroundTasks)
+			backgroundTasks[taskID(taskIdx)] = &backgroundStatus{
+				Name:     "Bulk EXR->DDS Conversion",
+				Message:  "",
+				Progress: 0,
+				Total:    -1,
+				Status:   taskIdle,
+			}
+			go bulkConvertFiles(prt, false, backgroundTasks[taskID(taskIdx)])
 		case menuResponseViewChannels:
 			response = menuResponseNone
 			channelsVisible = !channelsVisible
@@ -375,7 +437,7 @@ func run() {
 		if img != nil {
 			hovY += img.Bounds().Dy()
 		}
-		drawStatusBar(hovX+1, hovY+1, hovColor)
+		drawStatusBar(hovX+1, hovY+1, hovColor, backgroundTasks)
 
 		ui.Draw(win)
 
@@ -485,7 +547,7 @@ func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool
 	saveFile(prt, *fileName, img, saved, currColor, undoStack)
 }
 
-func bulkConvertFiles(prt *app.Printer, exrToDDS bool, onProgress func(current, total int, err error)) {
+func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *backgroundStatus) {
 	var directionString, globStr, outSuffix string
 	if exrToDDS {
 		directionString = "EXR to DDS"
@@ -498,30 +560,34 @@ func bulkConvertFiles(prt *app.Printer, exrToDDS bool, onProgress func(current, 
 	}
 	folderName, err := dialog.Directory().Title(fmt.Sprintf("Select folder to bulk convert %v...", directionString)).Browse()
 	if err == dialog.ErrCancelled {
+		task.onCancel()
 		return
 	} else if err != nil {
 		prt.Errorf("bulk convert: failed to get directory: %v", err)
 		return
 	}
 
+	var success, failed int = 0, 0
 	matches, err := filepath.Glob(filepath.Join(folderName, globStr))
 	for idx, path := range matches {
 		convImg, err := loadImage(path)
-		if onProgress != nil && err != nil {
-			onProgress(idx+1, len(matches), err)
+		if task != nil && err != nil {
+			task.onProgress(idx+1, len(matches), err)
 		}
 		if err != nil {
 			prt.Errorf("bulk convert: failed to load %v: %v", path, err)
+			failed += 1
 			continue
 		}
 
 		convertedPath := strings.TrimSuffix(path, filepath.Ext(path)) + outSuffix
 		out, err := os.OpenFile(convertedPath, os.O_CREATE|os.O_WRONLY, 0644)
-		if onProgress != nil && err != nil {
-			onProgress(idx+1, len(matches), err)
+		if task != nil && err != nil {
+			task.onProgress(idx+1, len(matches), err)
 		}
 		if err != nil {
 			prt.Errorf("bulk convert: failed to open %v: %v", convertedPath, err)
+			failed += 1
 			continue
 		}
 		defer out.Close()
@@ -529,10 +595,16 @@ func bulkConvertFiles(prt *app.Printer, exrToDDS bool, onProgress func(current, 
 		err = writeImage(out, convImg, convertedPath)
 		if err != nil {
 			prt.Errorf("bulk convert: failed to write %v: %v", convertedPath, err)
+			failed += 1
+		} else {
+			success += 1
 		}
-		if onProgress != nil {
-			onProgress(idx+1, len(matches), err)
+		if task != nil {
+			task.onProgress(idx+1, len(matches), err)
 		}
+	}
+	if task != nil {
+		task.onComplete(success, failed, len(matches))
 	}
 }
 
@@ -639,7 +711,7 @@ func drawGrid(win *opengl.Window, camZoom float64, spriteFrame pixel.Rect) {
 	grid.Draw(win)
 }
 
-func drawStatusBar(x, y int, color [4]float32) {
+func drawStatusBar(x, y int, color [4]float32, tasks map[taskID]*backgroundStatus) {
 	viewport := imgui.MainViewport()
 	imgui.SetNextWindowPos(imgui.Vec2{
 		X: viewport.Pos().X,
@@ -658,7 +730,32 @@ func drawStatusBar(x, y int, color [4]float32) {
 
 	if imgui.BeginV("StatusBar", nil, flags) {
 		if imgui.BeginMenuBar() {
-			imgui.Text(fmt.Sprintf("X: %d Y: %d RGBA: (%3.3f, %3.3f, %3.3f, %3.3f)", x, y, color[0], color[1], color[2], color[3]))
+			imgui.Textf("X: %d Y: %d RGBA: (%3.3f, %3.3f, %3.3f, %3.3f)", x, y, color[0], color[1], color[2], color[3])
+			imgui.Separator()
+			var lastTask taskID = taskID(0xFFFFFFFF)
+			imgui.BeginGroup()
+			for idx, task := range tasks {
+				lastTask = idx
+				if task.Status == taskRunning {
+					break
+				}
+			}
+			task, ok := tasks[lastTask]
+			if ok {
+				switch task.Status {
+				case taskRunning:
+					imgui.Text(task.Name)
+					imgui.ProgressBar(float32(task.Progress) / float32(task.Total))
+				case taskIdle:
+					imgui.Text(task.Name)
+					imgui.ProgressBarV(-float32(imgui.Time()), imgui.Vec2{X: -1.0, Y: 0.0}, "Starting...")
+				case taskFinished, taskFailed:
+					imgui.Textf("%v: %v", task.Name, task.Message)
+				case taskCancelled:
+					delete(tasks, lastTask)
+				}
+			}
+			imgui.EndGroup()
 			imgui.EndMenuBar()
 		}
 		imgui.End()
