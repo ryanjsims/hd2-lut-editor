@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
-	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +27,7 @@ import (
 	"github.com/ryanjsims/hd2-lut-editor/dds"
 	"github.com/ryanjsims/hd2-lut-editor/hdrColors"
 	"github.com/ryanjsims/hd2-lut-editor/openexr"
+	"github.com/ryanjsims/hd2-lut-editor/types"
 	"github.com/sqweek/dialog"
 	"github.com/x448/float16"
 )
@@ -35,136 +35,6 @@ import (
 var (
 	Atlas atlas.Atlas
 )
-
-type menuResponse uint8
-
-const (
-	menuResponseNone             menuResponse = 0
-	menuResponseImageOpen        menuResponse = 1
-	menuResponseImageSave        menuResponse = 2
-	menuResponseImageSaveAs      menuResponse = 3
-	menuResponseImageNew         menuResponse = 4
-	menuResponseViewChannels     menuResponse = 5
-	menuResponseViewColor        menuResponse = 6
-	menuResponseViewHelp         menuResponse = 7
-	menuResponseViewGrid         menuResponse = 8
-	menuResponseUndo             menuResponse = 9
-	menuResponseRedo             menuResponse = 10
-	menuResponseBulkConvertToDDS menuResponse = 11
-	menuResponseBulkConvertToEXR menuResponse = 12
-)
-
-type undoRedoState struct {
-	action   string
-	filename string
-	saved    bool
-	img      []byte
-	color    [4]float32
-}
-
-type undoRedoStack struct {
-	undoStack []undoRedoState
-	redoStack []undoRedoState
-	timer     *time.Timer
-}
-
-func (u *undoRedoStack) Clear() {
-	if u.timer != nil {
-		u.timer.Stop()
-		u.timer = nil
-	}
-	u.undoStack = make([]undoRedoState, 0)
-	u.redoStack = make([]undoRedoState, 0)
-}
-
-func (u *undoRedoStack) Push(action, filename string, saved bool, img image.Image, currColor [4]float32) {
-	undoState := undoRedoState{
-		action:   action,
-		filename: filename,
-		saved:    saved,
-		img:      make([]byte, 0),
-		color:    currColor,
-	}
-	if img != nil {
-		buf := &bytes.Buffer{}
-		openexr.WriteHDR(buf, img)
-		undoState.img = append(undoState.img, buf.Bytes()...)
-	}
-	u.undoStack = append(u.undoStack, undoState)
-}
-
-func (u *undoRedoStack) DelayedPush(d time.Duration, action string, filename *string, saved *bool, img *image.Image, currColor *[4]float32) {
-	if u.timer != nil {
-		u.timer.Stop()
-	}
-	u.timer = time.AfterFunc(d, func() { u.Push(action, *filename, *saved, *img, *currColor) })
-}
-
-func (u *undoRedoStack) Undo(index int) (*undoRedoState, error) {
-	if !(index >= 0 && index < len(u.undoStack)) {
-		return nil, fmt.Errorf("Undo: invalid index")
-	}
-	slices.Reverse(u.undoStack[index+1:])
-	u.redoStack = append(u.redoStack, u.undoStack[index+1:]...)
-	toReturn := u.undoStack[index]
-	u.undoStack = u.undoStack[:index+1]
-	return &toReturn, nil
-}
-
-func (u *undoRedoStack) Redo(index int) (*undoRedoState, error) {
-	if !(index >= 0 && index < len(u.redoStack)) {
-		return nil, fmt.Errorf("Undo: invalid index")
-	}
-	toReturn := u.redoStack[index]
-	slices.Reverse(u.redoStack[index:])
-	u.undoStack = append(u.undoStack, u.redoStack[index:]...)
-	u.redoStack = u.redoStack[:index]
-	return &toReturn, nil
-}
-
-type taskStatus uint32
-
-const (
-	taskIdle      taskStatus = 0
-	taskRunning   taskStatus = 1
-	taskFailed    taskStatus = 2
-	taskFinished  taskStatus = 3
-	taskCancelled taskStatus = 4
-)
-
-type backgroundStatus struct {
-	Name     string
-	Message  string
-	Progress int
-	Total    int
-	Status   taskStatus
-}
-
-func (b *backgroundStatus) onProgress(current, total int, err error) {
-	b.Progress = current
-	b.Total = total
-	b.Status = taskRunning
-	if err != nil {
-		b.Message = fmt.Sprintf("Error: %v", err)
-	}
-}
-
-func (b *backgroundStatus) onComplete(success, failed, total int) {
-	b.Progress = success + failed
-	b.Total = total
-	b.Status = taskFinished
-	b.Message = fmt.Sprintf("finished: %v success %v failed %v total", success, failed, total)
-	go func() {
-		time.Sleep(8 * time.Second)
-		b.Status = taskCancelled
-	}()
-}
-
-func (b *backgroundStatus) onCancel() {
-	b.Status = taskCancelled
-}
-
-type taskID uint32
 
 const baseTitle string = "Helldiver 2 LUT Editor"
 
@@ -246,14 +116,14 @@ func run() {
 		newImageWidth     int32                 = 23
 		newImageHeight    int32                 = 8
 		newImagePrecision int                   = 0
-		response          menuResponse          = menuResponseNone
+		response          types.MenuResponse    = types.MenuResponseNone
 		viewedChannel     hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
 		lastChannel       hdrColors.GraySetting = hdrColors.GraySettingNoAlpha
-		undoStack         undoRedoStack         = undoRedoStack{
-			undoStack: make([]undoRedoState, 0),
-			redoStack: make([]undoRedoState, 0),
+		undoStack         types.UndoRedoStack   = types.UndoRedoStack{
+			UndoStack: make([]types.UndoRedoState, 0),
+			RedoStack: make([]types.UndoRedoState, 0),
 		}
-		backgroundTasks = make(map[taskID]*backgroundStatus)
+		backgroundTasks = make(types.TaskMap)
 	)
 
 	var img image.Image
@@ -328,13 +198,13 @@ func run() {
 
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			!(ui.Pressed(pixel.KeyLeftShift) || ui.Pressed(pixel.KeyRightShift)) &&
-			ui.JustPressed(pixel.KeyZ) && len(undoStack.undoStack) > 1 {
-			handleUndo(prt, &undoStack, max(0, len(undoStack.undoStack)-2), &img, &refreshSprite, &lastChannel, &currColor)
+			ui.JustPressed(pixel.KeyZ) && len(undoStack.UndoStack) > 1 {
+			handleUndo(prt, &undoStack, max(0, len(undoStack.UndoStack)-2), &img, &refreshSprite, &lastChannel, &currColor)
 		}
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			(ui.Pressed(pixel.KeyLeftShift) || ui.Pressed(pixel.KeyRightShift)) &&
-			ui.JustPressed(pixel.KeyZ) && len(undoStack.redoStack) > 0 {
-			handleRedo(prt, &undoStack, max(0, len(undoStack.redoStack)-1), &img, &refreshSprite, &lastChannel, &currColor)
+			ui.JustPressed(pixel.KeyZ) && len(undoStack.RedoStack) > 0 {
+			handleRedo(prt, &undoStack, max(0, len(undoStack.RedoStack)-1), &img, &refreshSprite, &lastChannel, &currColor)
 		}
 
 		win.SetMatrix(cam)
@@ -343,72 +213,72 @@ func run() {
 		}
 
 		nextResponse, index := showMainMenuBar(img, channelsVisible, colorVisible, gridVisible, &undoStack)
-		if nextResponse != menuResponseNone {
+		if nextResponse != types.MenuResponseNone {
 			response = nextResponse
 		}
 
 		switch response {
-		case menuResponseImageNew:
+		case types.MenuResponseImageNew:
 			if createNewImage(&img, &newImageConfirm, &refreshSprite, &saved, &fileName, &lastChannel, &newImageWidth, &newImageHeight, &newImagePrecision) {
-				response = menuResponseNone
+				response = types.MenuResponseNone
 				if img != nil {
 					undoStack.Clear()
 					undoStack.Push("New Image", fileName, saved, img, currColor)
 				}
 			}
-		case menuResponseImageSave:
-			response = menuResponseNone
+		case types.MenuResponseImageSave:
+			response = types.MenuResponseNone
 			if fileName == "(new)" || len(fileName) == 0 {
 				go saveFileAs(prt, &fileName, img, &saved, currColor, &undoStack)
 			} else {
 				go saveFile(prt, fileName, img, &saved, currColor, &undoStack)
 			}
-		case menuResponseImageOpen:
-			response = menuResponseNone
+		case types.MenuResponseImageOpen:
+			response = types.MenuResponseNone
 			go openFile(prt, &fileName, &img, &refreshSprite, &lastChannel, currColor, &undoStack)
-		case menuResponseImageSaveAs:
-			response = menuResponseNone
+		case types.MenuResponseImageSaveAs:
+			response = types.MenuResponseNone
 			go saveFileAs(prt, &fileName, img, &saved, currColor, &undoStack)
-		case menuResponseBulkConvertToDDS:
-			response = menuResponseNone
+		case types.MenuResponseBulkConvertToDDS:
+			response = types.MenuResponseNone
 			taskIdx := len(backgroundTasks)
-			backgroundTasks[taskID(taskIdx)] = &backgroundStatus{
+			backgroundTasks[types.TaskID(taskIdx)] = &types.BackgroundStatus{
 				Name:     "Bulk DDS->EXR Conversion",
 				Message:  "",
 				Progress: 0,
 				Total:    -1,
-				Status:   taskIdle,
+				Status:   types.TaskIdle,
 			}
-			go bulkConvertFiles(prt, true, backgroundTasks[taskID(taskIdx)])
-		case menuResponseBulkConvertToEXR:
-			response = menuResponseNone
+			go bulkConvertFiles(prt, true, backgroundTasks[types.TaskID(taskIdx)])
+		case types.MenuResponseBulkConvertToEXR:
+			response = types.MenuResponseNone
 			taskIdx := len(backgroundTasks)
-			backgroundTasks[taskID(taskIdx)] = &backgroundStatus{
+			backgroundTasks[types.TaskID(taskIdx)] = &types.BackgroundStatus{
 				Name:     "Bulk EXR->DDS Conversion",
 				Message:  "",
 				Progress: 0,
 				Total:    -1,
-				Status:   taskIdle,
+				Status:   types.TaskIdle,
 			}
-			go bulkConvertFiles(prt, false, backgroundTasks[taskID(taskIdx)])
-		case menuResponseViewChannels:
-			response = menuResponseNone
+			go bulkConvertFiles(prt, false, backgroundTasks[types.TaskID(taskIdx)])
+		case types.MenuResponseViewChannels:
+			response = types.MenuResponseNone
 			channelsVisible = !channelsVisible
-		case menuResponseViewColor:
-			response = menuResponseNone
+		case types.MenuResponseViewColor:
+			response = types.MenuResponseNone
 			colorVisible = !colorVisible
-		case menuResponseViewGrid:
-			response = menuResponseNone
+		case types.MenuResponseViewGrid:
+			response = types.MenuResponseNone
 			gridVisible = !gridVisible
-		case menuResponseUndo:
-			response = menuResponseNone
+		case types.MenuResponseUndo:
+			response = types.MenuResponseNone
 			handleUndo(prt, &undoStack, index, &img, &refreshSprite, &lastChannel, &currColor)
-		case menuResponseRedo:
-			response = menuResponseNone
+		case types.MenuResponseRedo:
+			response = types.MenuResponseNone
 			handleRedo(prt, &undoStack, index, &img, &refreshSprite, &lastChannel, &currColor)
 		default:
 			// Do nothing
-			response = menuResponseNone
+			response = types.MenuResponseNone
 		}
 
 		if gridVisible && sprite != nil {
@@ -463,7 +333,7 @@ func run() {
 	}
 }
 
-func handleUndo(prt *app.Printer, undoStack *undoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
+func handleUndo(prt *app.Printer, undoStack *types.UndoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
 	state, err := undoStack.Undo(index)
 	if err != nil {
 		prt.Errorf("%v", err)
@@ -472,7 +342,7 @@ func handleUndo(prt *app.Printer, undoStack *undoRedoStack, index int, img *imag
 	restoreState(prt, state, img, refreshSprite, lastChannel, currColor)
 }
 
-func handleRedo(prt *app.Printer, undoStack *undoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
+func handleRedo(prt *app.Printer, undoStack *types.UndoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
 	state, err := undoStack.Redo(index)
 	if err != nil {
 		prt.Errorf("%v", err)
@@ -481,9 +351,9 @@ func handleRedo(prt *app.Printer, undoStack *undoRedoStack, index int, img *imag
 	restoreState(prt, state, img, refreshSprite, lastChannel, currColor)
 }
 
-func restoreState(prt *app.Printer, state *undoRedoState, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
-	if len(state.img) > 0 {
-		bufR := bufio.NewReader(bytes.NewBuffer(state.img))
+func restoreState(prt *app.Printer, state *types.UndoRedoState, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
+	if len(state.Img) > 0 {
+		bufR := bufio.NewReader(bytes.NewBuffer(state.Img))
 		exr, err := openexr.LoadOpenEXR(*bufR)
 		if err != nil {
 			prt.Errorf("%v", err)
@@ -498,7 +368,7 @@ func restoreState(prt *app.Printer, state *undoRedoState, img *image.Image, refr
 	}
 	*refreshSprite = true
 	*lastChannel = hdrColors.GraySettingAlpha
-	*currColor = state.color
+	*currColor = state.Color
 }
 
 func writeImage(out io.Writer, img image.Image, fileName string) (err error) {
@@ -512,7 +382,7 @@ func writeImage(out io.Writer, img image.Image, fileName string) (err error) {
 	return
 }
 
-func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, currColor [4]float32, undoStack *undoRedoStack) {
+func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, currColor [4]float32, undoStack *types.UndoRedoStack) {
 	out, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		prt.Errorf("failed to save: %v", err)
@@ -534,7 +404,7 @@ func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, c
 	undoStack.Push("Save File", fileName, true, img, currColor)
 }
 
-func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool, currColor [4]float32, undoStack *undoRedoStack) {
+func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool, currColor [4]float32, undoStack *types.UndoRedoStack) {
 	nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Save()
 	if err == dialog.ErrCancelled {
 		return
@@ -546,7 +416,7 @@ func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool
 	saveFile(prt, *fileName, img, saved, currColor, undoStack)
 }
 
-func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *backgroundStatus) {
+func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *types.BackgroundStatus) {
 	var directionString, globStr, outSuffix string
 	if exrToDDS {
 		directionString = "EXR to DDS"
@@ -559,17 +429,17 @@ func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *backgroundStatus) {
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		task.onCancel()
+		task.OnCancel()
 		prt.Errorf("bulk convert: failed to get current working directory: %v", err)
 		return
 	}
 	folderName, err := dialog.Directory().Title(fmt.Sprintf("Select folder to bulk convert %v...", directionString)).SetStartDir(cwd).Browse()
 	if err == dialog.ErrCancelled {
-		task.onCancel()
+		task.OnCancel()
 		return
 	} else if err != nil {
 		prt.Errorf("bulk convert: failed to get directory: %v", err)
-		task.onCancel()
+		task.OnCancel()
 		return
 	}
 
@@ -578,7 +448,7 @@ func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *backgroundStatus) {
 	for idx, path := range matches {
 		convImg, err := loadImage(path)
 		if task != nil && err != nil {
-			task.onProgress(idx+1, len(matches), err)
+			task.OnProgress(idx+1, len(matches), err)
 		}
 		if err != nil {
 			prt.Errorf("bulk convert: failed to load %v: %v", path, err)
@@ -589,7 +459,7 @@ func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *backgroundStatus) {
 		convertedPath := strings.TrimSuffix(path, filepath.Ext(path)) + outSuffix
 		out, err := os.OpenFile(convertedPath, os.O_CREATE|os.O_WRONLY, 0644)
 		if task != nil && err != nil {
-			task.onProgress(idx+1, len(matches), err)
+			task.OnProgress(idx+1, len(matches), err)
 		}
 		if err != nil {
 			prt.Errorf("bulk convert: failed to open %v: %v", convertedPath, err)
@@ -606,15 +476,15 @@ func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *backgroundStatus) {
 			success += 1
 		}
 		if task != nil {
-			task.onProgress(idx+1, len(matches), err)
+			task.OnProgress(idx+1, len(matches), err)
 		}
 	}
 	if task != nil {
-		task.onComplete(success, failed, len(matches))
+		task.OnComplete(success, failed, len(matches))
 	}
 }
 
-func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor [4]float32, undoStack *undoRedoStack) {
+func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor [4]float32, undoStack *types.UndoRedoStack) {
 	nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Load()
 	if err == dialog.ErrCancelled {
 		return
@@ -717,7 +587,7 @@ func drawGrid(win *opengl.Window, camZoom float64, spriteFrame pixel.Rect) {
 	grid.Draw(win)
 }
 
-func drawStatusBar(x, y int, color [4]float32, tasks map[taskID]*backgroundStatus) {
+func drawStatusBar(x, y int, color [4]float32, tasks types.TaskMap) {
 	viewport := imgui.MainViewport()
 	imgui.SetNextWindowPos(imgui.Vec2{
 		X: viewport.Pos().X,
@@ -738,26 +608,26 @@ func drawStatusBar(x, y int, color [4]float32, tasks map[taskID]*backgroundStatu
 		if imgui.BeginMenuBar() {
 			imgui.Textf("X: %d Y: %d RGBA: (%3.3f, %3.3f, %3.3f, %3.3f)", x, y, color[0], color[1], color[2], color[3])
 			imgui.Separator()
-			var lastTask taskID = taskID(0xFFFFFFFF)
+			var lastTask types.TaskID = types.TaskID(0xFFFFFFFF)
 			imgui.BeginGroup()
 			for idx, task := range tasks {
 				lastTask = idx
-				if task.Status == taskRunning {
+				if task.Status == types.TaskRunning {
 					break
 				}
 			}
 			task, ok := tasks[lastTask]
 			if ok {
 				switch task.Status {
-				case taskRunning:
+				case types.TaskRunning:
 					imgui.Text(task.Name)
 					imgui.ProgressBar(float32(task.Progress) / float32(task.Total))
-				case taskIdle:
+				case types.TaskIdle:
 					imgui.Text(task.Name)
 					imgui.ProgressBarV(-float32(imgui.Time()), imgui.Vec2{X: -1.0, Y: 0.0}, "Starting...")
-				case taskFinished, taskFailed:
+				case types.TaskFinished, types.TaskFailed:
 					imgui.Textf("%v: %v", task.Name, task.Message)
-				case taskCancelled:
+				case types.TaskCancelled:
 					delete(tasks, lastTask)
 				}
 			}
@@ -1053,8 +923,8 @@ func newImageDialog(width, height *int32, precision *int, windowSize imgui.Vec2,
 	return
 }
 
-func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible bool, undoStack *undoRedoStack) (menuResponse, int) {
-	response := menuResponseNone
+func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible bool, undoStack *types.UndoRedoStack) (types.MenuResponse, int) {
+	response := types.MenuResponseNone
 	index := -1
 	if imgui.BeginMainMenuBar() {
 		if imgui.BeginMenu("File") {
@@ -1074,51 +944,51 @@ func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible
 	return response, index
 }
 
-func showFileMenu(img image.Image) menuResponse {
-	response := menuResponseNone
+func showFileMenu(img image.Image) types.MenuResponse {
+	response := types.MenuResponseNone
 	if imgui.MenuItem("New") {
-		response = menuResponseImageNew
+		response = types.MenuResponseImageNew
 	}
 	if imgui.MenuItem("Open...") {
-		response = menuResponseImageOpen
+		response = types.MenuResponseImageOpen
 	}
 	if imgui.MenuItemV("Save", "", false, img != nil) {
-		response = menuResponseImageSave
+		response = types.MenuResponseImageSave
 	}
 	if imgui.MenuItemV("Save As...", "", false, img != nil) {
-		response = menuResponseImageSaveAs
+		response = types.MenuResponseImageSaveAs
 	}
 	if imgui.MenuItem("Convert to DDS...") {
-		response = menuResponseBulkConvertToDDS
+		response = types.MenuResponseBulkConvertToDDS
 	}
 	if imgui.MenuItem("Convert to EXR...") {
-		response = menuResponseBulkConvertToEXR
+		response = types.MenuResponseBulkConvertToEXR
 	}
 	return response
 }
 
-func showEditMenu(undoStack *undoRedoStack) (resp menuResponse, index int) {
-	if imgui.MenuItemV("Undo", "ctrl-z", false, len(undoStack.undoStack) > 0) {
-		resp = menuResponseUndo
-		index = max(len(undoStack.undoStack)-2, 0)
+func showEditMenu(undoStack *types.UndoRedoStack) (resp types.MenuResponse, index int) {
+	if imgui.MenuItemV("Undo", "ctrl-z", false, len(undoStack.UndoStack) > 0) {
+		resp = types.MenuResponseUndo
+		index = max(len(undoStack.UndoStack)-2, 0)
 	}
-	if imgui.BeginMenuV("Undo...", len(undoStack.undoStack) > 0) {
-		for i, undoItem := range undoStack.undoStack {
-			if imgui.MenuItem(undoItem.action) {
-				resp = menuResponseUndo
+	if imgui.BeginMenuV("Undo...", len(undoStack.UndoStack) > 0) {
+		for i, undoItem := range undoStack.UndoStack {
+			if imgui.MenuItem(undoItem.Action) {
+				resp = types.MenuResponseUndo
 				index = i
 			}
 		}
 		imgui.EndMenu()
 	}
-	if imgui.MenuItemV("Redo", "ctrl-shift-z", false, len(undoStack.redoStack) > 0) {
-		resp = menuResponseRedo
-		index = max(len(undoStack.redoStack)-1, 0)
+	if imgui.MenuItemV("Redo", "ctrl-shift-z", false, len(undoStack.RedoStack) > 0) {
+		resp = types.MenuResponseRedo
+		index = max(len(undoStack.RedoStack)-1, 0)
 	}
-	if imgui.BeginMenuV("Redo...", len(undoStack.redoStack) > 0) {
-		for i, redoItem := range undoStack.redoStack {
-			if imgui.MenuItem(redoItem.action) {
-				resp = menuResponseRedo
+	if imgui.BeginMenuV("Redo...", len(undoStack.RedoStack) > 0) {
+		for i, redoItem := range undoStack.RedoStack {
+			if imgui.MenuItem(redoItem.Action) {
+				resp = types.MenuResponseRedo
 				index = i
 			}
 		}
@@ -1127,16 +997,16 @@ func showEditMenu(undoStack *undoRedoStack) (resp menuResponse, index int) {
 	return
 }
 
-func showViewMenu(channelsVisible, colorVisible, gridVisible bool) menuResponse {
-	response := menuResponseNone
+func showViewMenu(channelsVisible, colorVisible, gridVisible bool) types.MenuResponse {
+	response := types.MenuResponseNone
 	if imgui.MenuItemV("Channels", "", channelsVisible, true) {
-		response = menuResponseViewChannels
+		response = types.MenuResponseViewChannels
 	}
 	if imgui.MenuItemV("Color", "", colorVisible, true) {
-		response = menuResponseViewColor
+		response = types.MenuResponseViewColor
 	}
 	if imgui.MenuItemV("Grid", "", gridVisible, true) {
-		response = menuResponseViewGrid
+		response = types.MenuResponseViewGrid
 	}
 	return response
 }
