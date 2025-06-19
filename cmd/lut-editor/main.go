@@ -36,6 +36,14 @@ var (
 	Atlas atlas.Atlas
 )
 
+type lmbTool int
+
+const (
+	toolDraw         lmbTool = iota
+	toolSelect       lmbTool = iota
+	toolMoveSelected lmbTool = iota
+)
+
 const baseTitle string = "Helldiver 2 LUT Editor"
 
 func run() {
@@ -112,6 +120,7 @@ func run() {
 		channelsVisible   bool   = true
 		colorVisible      bool   = true
 		gridVisible       bool   = true
+		toolsVisible      bool   = true
 		newImageConfirm   bool
 		newImageWidth     int32                 = 23
 		newImageHeight    int32                 = 8
@@ -124,9 +133,15 @@ func run() {
 			RedoStack: make([]types.UndoRedoState, 0),
 		}
 		backgroundTasks = make(types.TaskMap)
+		img             image.Image
+		// pasteImg        image.Image
+		// pasteSprite     *pixel.Sprite
+		tool           lmbTool = toolDraw
+		selection              = pixel.ZR
+		selectionStart         = pixel.ZV
+		selectionEnd           = pixel.ZV
 	)
 
-	var img image.Image
 	if imagePath != nil && len(*imagePath) > 0 {
 		img, err = loadImage(*imagePath)
 
@@ -188,11 +203,32 @@ func run() {
 		if ui.Pressed(pixel.MouseButtonLeft) && sprite != nil {
 			x, y := getPixelCoords(cam, sprite.Frame().Center(), win.MousePosition())
 			y = img.Bounds().Dy() - y - 1
-			if x < img.Bounds().Dx() && y < img.Bounds().Dy() && x >= 0 && y >= 0 {
-				setHDRFromFloats(x, y, currColor, img)
-				refreshSprite = true
-				saved = false
-				undoStack.DelayedPush(1*time.Second, "Draw", &fileName, &saved, &img, &currColor)
+			point := image.Rect(x, y, x, y)
+			if point.In(img.Bounds()) {
+				switch tool {
+				case toolDraw:
+					setHDRFromFloats(x, y, currColor, img)
+					refreshSprite = true
+					saved = false
+					undoStack.DelayedPush(1*time.Second, "Draw", &fileName, &saved, &img, &currColor)
+				case toolSelect:
+					mousePos := cam.Unproject(win.MousePosition())
+					clampedX := math.Max(0, math.Min(float64(x), float64(img.Bounds().Dx())))
+					clampedY := math.Max(0, math.Min(float64(y), float64(img.Bounds().Dy())))
+					if ui.JustPressed(pixel.MouseButtonLeft) {
+						selectionStart = fromPixelCoords(cam, sprite.Frame().Center(), int(clampedX), img.Bounds().Dy()-int(clampedY))
+					}
+					if selectionStart.X < mousePos.X {
+						clampedX = math.Max(0, math.Min(float64(x+1), float64(img.Bounds().Dx())))
+					}
+					if selectionStart.Y < mousePos.Y {
+						clampedY = math.Max(0, math.Min(float64(y+1), float64(img.Bounds().Dy())))
+					}
+					selectionEnd = fromPixelCoords(cam, sprite.Frame().Center(), int(clampedX), img.Bounds().Dy()-int(clampedY))
+					selection.Min = selectionStart
+					selection.Max = selectionEnd
+					selection = selection.Norm()
+				}
 			}
 		}
 
@@ -212,7 +248,7 @@ func run() {
 			sprite.Draw(win, pixel.IM)
 		}
 
-		nextResponse, index := showMainMenuBar(img, channelsVisible, colorVisible, gridVisible, &undoStack)
+		nextResponse, index := showMainMenuBar(img, channelsVisible, colorVisible, gridVisible, toolsVisible, &undoStack)
 		if nextResponse != types.MenuResponseNone {
 			response = nextResponse
 		}
@@ -270,6 +306,9 @@ func run() {
 		case types.MenuResponseViewGrid:
 			response = types.MenuResponseNone
 			gridVisible = !gridVisible
+		case types.MenuResponseViewTools:
+			response = types.MenuResponseNone
+			toolsVisible = !toolsVisible
 		case types.MenuResponseUndo:
 			response = types.MenuResponseNone
 			handleUndo(prt, &undoStack, index, &img, &refreshSprite, &lastChannel, &currColor)
@@ -283,6 +322,14 @@ func run() {
 
 		if gridVisible && sprite != nil {
 			drawGrid(win, camZoom, sprite.Frame())
+		}
+
+		if (tool == toolSelect || tool == toolMoveSelected) && selection != pixel.ZR {
+			drawSelection(win, camZoom, selection)
+		}
+
+		if toolsVisible {
+			drawToolWindow(&tool, &toolsVisible)
 		}
 
 		if colorVisible {
@@ -306,7 +353,11 @@ func run() {
 		if img != nil {
 			hovY += img.Bounds().Dy()
 		}
-		drawStatusBar(hovX+1, hovY+1, hovColor, backgroundTasks)
+		pixelSelection := pixel.Rect{
+			Min: selection.Min.Add(center),
+			Max: selection.Max.Add(center),
+		}
+		drawStatusBar(cam.Unproject(win.MousePosition()).Add(center), hovColor, backgroundTasks, pixelSelection)
 
 		ui.Draw(win)
 
@@ -511,6 +562,10 @@ func getPixelCoords(camera pixel.Matrix, spriteCenter pixel.Vec, mousePosition p
 	return
 }
 
+func fromPixelCoords(_ pixel.Matrix, spriteCenter pixel.Vec, x, y int) pixel.Vec {
+	return pixel.V(float64(x), float64(y)).Sub(spriteCenter)
+}
+
 func getImgColorAtCoords(prt *app.Printer, img image.Image, x, y int, viewedChannel hdrColors.GraySetting) [4]float32 {
 	if img == nil {
 		return [4]float32{}
@@ -539,6 +594,15 @@ func drawChannelWindow(viewedChannel *hdrColors.GraySetting, visible *bool) {
 		imgui.RadioButtonInt("Green", (*int)(viewedChannel), int(hdrColors.GraySettingBlue))
 		imgui.RadioButtonInt("Blue", (*int)(viewedChannel), int(hdrColors.GraySettingGreen))
 		imgui.RadioButtonInt("Alpha   ", (*int)(viewedChannel), int(hdrColors.GraySettingAlpha))
+	}
+	imgui.End()
+}
+
+func drawToolWindow(currentTool *lmbTool, visible *bool) {
+	imgui.BeginV("Tool", visible, imgui.WindowFlagsAlwaysAutoResize|imgui.WindowFlagsNoCollapse)
+	{
+		imgui.RadioButtonInt("Draw", (*int)(currentTool), int(toolDraw))
+		imgui.RadioButtonInt("Select", (*int)(currentTool), int(toolSelect))
 	}
 	imgui.End()
 }
@@ -587,7 +651,33 @@ func drawGrid(win *opengl.Window, camZoom float64, spriteFrame pixel.Rect) {
 	grid.Draw(win)
 }
 
-func drawStatusBar(x, y int, color [4]float32, tasks types.TaskMap) {
+func drawSelection(win *opengl.Window, camZoom float64, selectionArea pixel.Rect) {
+	selectionBox := imdraw.New(nil)
+	selectionColor := pixel.RGBA{
+		R: 0.4,
+		G: 0.4,
+		B: 0.7,
+		A: 0.25,
+	}
+
+	lineWidth := 1.0 / camZoom
+	selectionBox.Color = selectionColor
+	selectionBox.Push(selectionArea.Min)
+	selectionBox.Push(selectionArea.Max)
+	selectionBox.Rectangle(lineWidth)
+	selectionColor.A = 0.0625
+	selectionBox.Color = selectionColor
+	for x := selectionArea.Min.X; x < selectionArea.Max.X; x += 1 {
+		for y := selectionArea.Min.Y; y < selectionArea.Max.Y; y += 1 {
+			selectionBox.Push(pixel.V(x, y))
+			selectionBox.Push(pixel.V(x+1, y+1))
+			selectionBox.Line(lineWidth)
+		}
+	}
+	selectionBox.Draw(win)
+}
+
+func drawStatusBar(mousePos pixel.Vec, color [4]float32, tasks types.TaskMap, selection pixel.Rect) {
 	viewport := imgui.MainViewport()
 	imgui.SetNextWindowPos(imgui.Vec2{
 		X: viewport.Pos().X,
@@ -606,7 +696,9 @@ func drawStatusBar(x, y int, color [4]float32, tasks types.TaskMap) {
 
 	if imgui.BeginV("StatusBar", nil, flags) {
 		if imgui.BeginMenuBar() {
-			imgui.Textf("X: %d Y: %d RGBA: (%3.3f, %3.3f, %3.3f, %3.3f)", x, y, color[0], color[1], color[2], color[3])
+			imgui.Textf("Mouse: (%.1f, %.1f) RGBA: (%3.3f, %3.3f, %3.3f, %3.3f)", mousePos.X, mousePos.Y, color[0], color[1], color[2], color[3])
+			imgui.Separator()
+			imgui.Textf("Selection: (%d, %d) -> (%d, %d)", int(selection.Min.X), int(selection.Min.Y), int(selection.Max.X), int(selection.Max.Y))
 			imgui.Separator()
 			var lastTask types.TaskID = types.TaskID(0xFFFFFFFF)
 			imgui.BeginGroup()
@@ -923,7 +1015,7 @@ func newImageDialog(width, height *int32, precision *int, windowSize imgui.Vec2,
 	return
 }
 
-func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible bool, undoStack *types.UndoRedoStack) (types.MenuResponse, int) {
+func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible, toolsVisible bool, undoStack *types.UndoRedoStack) (types.MenuResponse, int) {
 	response := types.MenuResponseNone
 	index := -1
 	if imgui.BeginMainMenuBar() {
@@ -936,7 +1028,7 @@ func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible
 			imgui.EndMenu()
 		}
 		if imgui.BeginMenu("View") {
-			response = showViewMenu(channelsVisible, colorVisible, gridVisible)
+			response = showViewMenu(channelsVisible, colorVisible, gridVisible, toolsVisible)
 			imgui.EndMenu()
 		}
 		imgui.EndMainMenuBar()
@@ -997,7 +1089,7 @@ func showEditMenu(undoStack *types.UndoRedoStack) (resp types.MenuResponse, inde
 	return
 }
 
-func showViewMenu(channelsVisible, colorVisible, gridVisible bool) types.MenuResponse {
+func showViewMenu(channelsVisible, colorVisible, gridVisible, toolsVisible bool) types.MenuResponse {
 	response := types.MenuResponseNone
 	if imgui.MenuItemV("Channels", "", channelsVisible, true) {
 		response = types.MenuResponseViewChannels
@@ -1007,6 +1099,9 @@ func showViewMenu(channelsVisible, colorVisible, gridVisible bool) types.MenuRes
 	}
 	if imgui.MenuItemV("Grid", "", gridVisible, true) {
 		response = types.MenuResponseViewGrid
+	}
+	if imgui.MenuItemV("Tools", "", toolsVisible, true) {
+		response = types.MenuResponseViewTools
 	}
 	return response
 }
