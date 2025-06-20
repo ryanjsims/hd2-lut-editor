@@ -116,7 +116,7 @@ func run() {
 		precision         int32  = 3
 		fileName          string = ""
 		saved             bool   = true
-		refreshSprite     bool   = false
+		refreshSprites    bool   = false
 		channelsVisible   bool   = true
 		colorVisible      bool   = true
 		gridVisible       bool   = true
@@ -134,12 +134,15 @@ func run() {
 		}
 		backgroundTasks = make(types.TaskMap)
 		img             image.Image
-		// pasteImg        image.Image
-		// pasteSprite     *pixel.Sprite
-		tool           lmbTool = toolDraw
-		selection              = pixel.ZR
-		selectionStart         = pixel.ZV
-		selectionEnd           = pixel.ZV
+		pasteImg        image.Image
+		pastePic        *pixel.PictureData
+		pasteSprite     *pixel.Sprite
+		tool            lmbTool = toolDraw
+		prevTool        lmbTool = toolDraw
+		selection               = pixel.ZR
+		selectionStart          = pixel.ZV
+		selectionEnd            = pixel.ZV
+		selectionOffset         = pixel.ZV
 	)
 
 	if imagePath != nil && len(*imagePath) > 0 {
@@ -152,7 +155,7 @@ func run() {
 			lastChannel = hdrColors.GraySettingNone
 			newImageWidth = int32(img.Bounds().Dx())
 			newImageHeight = int32(img.Bounds().Dy())
-			undoStack.Push("Load File", *imagePath, true, img, currColor)
+			undoStack.Push("Load File", *imagePath, true, img, currColor, selection)
 		}
 	}
 
@@ -172,13 +175,22 @@ func run() {
 	for !win.Closed() {
 		ui.NewFrame()
 		win.Clear(clearColor)
-		if refreshSprite && img != nil {
-			refreshSprite = false
+		if refreshSprites && img != nil {
+			refreshSprites = false
 			pic = pixel.PictureDataFromImage(img)
 			if sprite != nil {
 				sprite.Set(pic, pic.Bounds())
 			} else {
 				sprite = pixel.NewSprite(pic, pic.Bounds())
+			}
+
+			if pasteImg != nil {
+				pastePic = pixel.PictureDataFromImage(pasteImg)
+				if pasteSprite != nil {
+					pasteSprite.Set(pastePic, pastePic.Bounds())
+				} else {
+					pasteSprite = pixel.NewSprite(pastePic, pastePic.Bounds())
+				}
 			}
 		}
 
@@ -197,7 +209,7 @@ func run() {
 		if ui.Pressed(pixel.MouseButtonRight) && sprite != nil {
 			x, y := getPixelCoords(cam, sprite.Frame().Center(), win.MousePosition())
 			currColor = getImgColorAtCoords(prt, img, x, y, viewedChannel)
-			undoStack.DelayedPush(1*time.Second, "Pick Color", &fileName, &saved, &img, &currColor)
+			undoStack.DelayedPush(1*time.Second, "Pick Color", &fileName, &saved, &img, &currColor, &selection)
 		}
 
 		if ui.Pressed(pixel.MouseButtonLeft) && sprite != nil {
@@ -208,9 +220,9 @@ func run() {
 				switch tool {
 				case toolDraw:
 					setHDRFromFloats(x, y, currColor, img)
-					refreshSprite = true
+					refreshSprites = true
 					saved = false
-					undoStack.DelayedPush(1*time.Second, "Draw", &fileName, &saved, &img, &currColor)
+					undoStack.DelayedPush(1*time.Second, "Draw", &fileName, &saved, &img, &currColor, &selection)
 				case toolSelect:
 					mousePos := cam.Unproject(win.MousePosition())
 					clampedX := math.Max(0, math.Min(float64(x), float64(img.Bounds().Dx())))
@@ -228,24 +240,72 @@ func run() {
 					selection.Min = selectionStart
 					selection.Max = selectionEnd
 					selection = selection.Norm()
+					undoStack.DelayedPush(1*time.Second, "Change Selection", &fileName, &saved, &img, &currColor, &selection)
+				case toolMoveSelected:
+					clampedX := math.Max(0, math.Min(float64(x), float64(img.Bounds().Dx())))
+					clampedY := math.Max(0, math.Min(float64(y), float64(img.Bounds().Dy())))
+					if ui.JustPressed(pixel.MouseButtonLeft) {
+						selectionStart = fromPixelCoords(cam, sprite.Frame().Center(), int(clampedX), img.Bounds().Dy()-int(clampedY))
+					}
+					selectionEnd = fromPixelCoords(cam, sprite.Frame().Center(), int(clampedX), img.Bounds().Dy()-int(clampedY))
+					selectionOffset = selectionEnd.Sub(selectionStart)
+					undoStack.DelayedPush(1*time.Second, "Move Selection", &fileName, &saved, &img, &currColor, &selection)
 				}
 			}
 		}
+		if ui.JustReleased(pixel.MouseButtonLeft) && selectionOffset != pixel.ZV {
+			selection = selection.Moved(selectionOffset)
+			selectionOffset = pixel.ZV
+		}
 
+		// Undo
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			!(ui.Pressed(pixel.KeyLeftShift) || ui.Pressed(pixel.KeyRightShift)) &&
 			ui.JustPressed(pixel.KeyZ) && len(undoStack.UndoStack) > 1 {
-			handleUndo(prt, &undoStack, max(0, len(undoStack.UndoStack)-2), &img, &refreshSprite, &lastChannel, &currColor)
+			handleUndo(prt, &undoStack, max(0, len(undoStack.UndoStack)-2), &img, &refreshSprites, &lastChannel, &currColor, &selection)
 		}
+		// Redo
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			(ui.Pressed(pixel.KeyLeftShift) || ui.Pressed(pixel.KeyRightShift)) &&
 			ui.JustPressed(pixel.KeyZ) && len(undoStack.RedoStack) > 0 {
-			handleRedo(prt, &undoStack, max(0, len(undoStack.RedoStack)-1), &img, &refreshSprite, &lastChannel, &currColor)
+			handleRedo(prt, &undoStack, max(0, len(undoStack.RedoStack)-1), &img, &refreshSprites, &lastChannel, &currColor, &selection)
+		}
+
+		// Copy shortcut
+		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
+			ui.JustPressed(pixel.KeyC) && img != nil && selection != pixel.ZR {
+			handleCopy(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tool)
+		}
+
+		// Cut shortcut
+		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
+			ui.JustPressed(pixel.KeyX) && img != nil && selection != pixel.ZR {
+			undoStack.Push("Cut", fileName, saved, img, currColor, selection)
+			handleCut(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tool)
+			saved = false
+		}
+
+		// Paste shortcut
+		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
+			ui.JustPressed(pixel.KeyV) && img != nil {
+			undoStack.Push("Paste", fileName, saved, img, currColor, selection)
+			handlePaste(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tool)
+			saved = false
+			pastePic = nil
+			pasteSprite = nil
 		}
 
 		win.SetMatrix(cam)
 		if sprite != nil {
 			sprite.Draw(win, pixel.IM)
+		}
+		if tool == toolSelect && pasteSprite != nil {
+			pasteImg = nil
+			pastePic = nil
+			pasteSprite = nil
+		}
+		if pasteSprite != nil {
+			pasteSprite.Draw(win, pixel.IM.Moved(selection.Moved(selectionOffset).Center()))
 		}
 
 		nextResponse, index := showMainMenuBar(img, channelsVisible, colorVisible, gridVisible, toolsVisible, &undoStack)
@@ -255,26 +315,26 @@ func run() {
 
 		switch response {
 		case types.MenuResponseImageNew:
-			if createNewImage(&img, &newImageConfirm, &refreshSprite, &saved, &fileName, &lastChannel, &newImageWidth, &newImageHeight, &newImagePrecision) {
+			if createNewImage(&img, &newImageConfirm, &refreshSprites, &saved, &fileName, &lastChannel, &newImageWidth, &newImageHeight, &newImagePrecision) {
 				response = types.MenuResponseNone
 				if img != nil {
 					undoStack.Clear()
-					undoStack.Push("New Image", fileName, saved, img, currColor)
+					undoStack.Push("New Image", fileName, saved, img, currColor, selection)
 				}
 			}
 		case types.MenuResponseImageSave:
 			response = types.MenuResponseNone
 			if fileName == "(new)" || len(fileName) == 0 {
-				go saveFileAs(prt, &fileName, img, &saved, currColor, &undoStack)
+				go saveFileAs(prt, &fileName, img, &saved, currColor, selection, &undoStack)
 			} else {
-				go saveFile(prt, fileName, img, &saved, currColor, &undoStack)
+				go saveFile(prt, fileName, img, &saved, currColor, selection, &undoStack)
 			}
 		case types.MenuResponseImageOpen:
 			response = types.MenuResponseNone
-			go openFile(prt, &fileName, &img, &refreshSprite, &lastChannel, currColor, &undoStack)
+			go openFile(prt, &fileName, &img, &refreshSprites, &lastChannel, currColor, selection, &undoStack)
 		case types.MenuResponseImageSaveAs:
 			response = types.MenuResponseNone
-			go saveFileAs(prt, &fileName, img, &saved, currColor, &undoStack)
+			go saveFileAs(prt, &fileName, img, &saved, currColor, selection, &undoStack)
 		case types.MenuResponseBulkConvertToDDS:
 			response = types.MenuResponseNone
 			taskIdx := len(backgroundTasks)
@@ -311,10 +371,10 @@ func run() {
 			toolsVisible = !toolsVisible
 		case types.MenuResponseUndo:
 			response = types.MenuResponseNone
-			handleUndo(prt, &undoStack, index, &img, &refreshSprite, &lastChannel, &currColor)
+			handleUndo(prt, &undoStack, index, &img, &refreshSprites, &lastChannel, &currColor, &selection)
 		case types.MenuResponseRedo:
 			response = types.MenuResponseNone
-			handleRedo(prt, &undoStack, index, &img, &refreshSprite, &lastChannel, &currColor)
+			handleRedo(prt, &undoStack, index, &img, &refreshSprites, &lastChannel, &currColor, &selection)
 		default:
 			// Do nothing
 			response = types.MenuResponseNone
@@ -325,18 +385,29 @@ func run() {
 		}
 
 		if (tool == toolSelect || tool == toolMoveSelected) && selection != pixel.ZR {
-			drawSelection(win, camZoom, selection)
+			drawSelection(win, camZoom, selection.Moved(selectionOffset))
 		}
 
 		if toolsVisible {
+			tempPrevTool := tool
 			drawToolWindow(&tool, &toolsVisible)
+			if tool != tempPrevTool && tool == toolMoveSelected && selection != pixel.ZR {
+				undoStack.Push("Start move pixels", fileName, saved, img, currColor, selection)
+				handleCut(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tempPrevTool)
+				saved = false
+			}
+			if tool != tempPrevTool && tempPrevTool == toolMoveSelected && selection != pixel.ZR {
+				undoStack.Push("End move pixels", fileName, saved, img, currColor, selection)
+				handlePaste(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tempPrevTool)
+				saved = false
+			}
 		}
 
 		if colorVisible {
 			prevColor := currColor
 			drawColorWindow(&precision, &currColor, &colorVisible)
 			if prevColor != currColor {
-				undoStack.DelayedPush(1*time.Second, "Edit Color", &fileName, &saved, &img, &currColor)
+				undoStack.DelayedPush(1*time.Second, "Edit Color", &fileName, &saved, &img, &currColor, &selection)
 			}
 		}
 		if channelsVisible {
@@ -373,8 +444,13 @@ func run() {
 			} else {
 				prt.Errorf("failed to set gray")
 			}
+
+			pasteGrayable, ok := getGrayable(pasteImg)
+			if ok {
+				pasteGrayable.SetGray(viewedChannel)
+			}
 			lastChannel = viewedChannel
-			refreshSprite = true
+			refreshSprites = true
 		}
 		win.SetTitle(fmt.Sprintf("%s - %s%s", baseTitle, fileName, modified))
 
@@ -384,25 +460,25 @@ func run() {
 	}
 }
 
-func handleUndo(prt *app.Printer, undoStack *types.UndoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
+func handleUndo(prt *app.Printer, undoStack *types.UndoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32, selection *pixel.Rect) {
 	state, err := undoStack.Undo(index)
 	if err != nil {
 		prt.Errorf("%v", err)
 		return
 	}
-	restoreState(prt, state, img, refreshSprite, lastChannel, currColor)
+	restoreState(prt, state, img, refreshSprite, lastChannel, currColor, selection)
 }
 
-func handleRedo(prt *app.Printer, undoStack *types.UndoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
+func handleRedo(prt *app.Printer, undoStack *types.UndoRedoStack, index int, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32, selection *pixel.Rect) {
 	state, err := undoStack.Redo(index)
 	if err != nil {
 		prt.Errorf("%v", err)
 		return
 	}
-	restoreState(prt, state, img, refreshSprite, lastChannel, currColor)
+	restoreState(prt, state, img, refreshSprite, lastChannel, currColor, selection)
 }
 
-func restoreState(prt *app.Printer, state *types.UndoRedoState, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32) {
+func restoreState(prt *app.Printer, state *types.UndoRedoState, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor *[4]float32, selection *pixel.Rect) {
 	if len(state.Img) > 0 {
 		bufR := bufio.NewReader(bytes.NewBuffer(state.Img))
 		exr, err := openexr.LoadOpenEXR(*bufR)
@@ -420,6 +496,7 @@ func restoreState(prt *app.Printer, state *types.UndoRedoState, img *image.Image
 	*refreshSprite = true
 	*lastChannel = hdrColors.GraySettingAlpha
 	*currColor = state.Color
+	*selection = state.Selection
 }
 
 func writeImage(out io.Writer, img image.Image, fileName string) (err error) {
@@ -433,7 +510,7 @@ func writeImage(out io.Writer, img image.Image, fileName string) (err error) {
 	return
 }
 
-func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, currColor [4]float32, undoStack *types.UndoRedoStack) {
+func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, currColor [4]float32, selection pixel.Rect, undoStack *types.UndoRedoStack) {
 	out, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		prt.Errorf("failed to save: %v", err)
@@ -452,10 +529,10 @@ func saveFile(prt *app.Printer, fileName string, img image.Image, saved *bool, c
 		out.Truncate(length)
 	}
 	*saved = true
-	undoStack.Push("Save File", fileName, true, img, currColor)
+	undoStack.Push("Save File", fileName, true, img, currColor, selection)
 }
 
-func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool, currColor [4]float32, undoStack *types.UndoRedoStack) {
+func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool, currColor [4]float32, selection pixel.Rect, undoStack *types.UndoRedoStack) {
 	nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Save()
 	if err == dialog.ErrCancelled {
 		return
@@ -464,7 +541,7 @@ func saveFileAs(prt *app.Printer, fileName *string, img image.Image, saved *bool
 		return
 	}
 	*fileName = nextFileName
-	saveFile(prt, *fileName, img, saved, currColor, undoStack)
+	saveFile(prt, *fileName, img, saved, currColor, selection, undoStack)
 }
 
 func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *types.BackgroundStatus) {
@@ -535,7 +612,7 @@ func bulkConvertFiles(prt *app.Printer, exrToDDS bool, task *types.BackgroundSta
 	}
 }
 
-func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor [4]float32, undoStack *types.UndoRedoStack) {
+func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprite *bool, lastChannel *hdrColors.GraySetting, currColor [4]float32, selection pixel.Rect, undoStack *types.UndoRedoStack) {
 	nextFileName, err := dialog.File().Filter("DDS or EXR files", "dds", "exr").Load()
 	if err == dialog.ErrCancelled {
 		return
@@ -553,7 +630,7 @@ func openFile(prt *app.Printer, fileName *string, img *image.Image, refreshSprit
 	*refreshSprite = true
 	*lastChannel = hdrColors.GraySettingNone
 	undoStack.Clear()
-	undoStack.Push("Load File", *fileName, true, *img, currColor)
+	undoStack.Push("Load File", *fileName, true, *img, currColor, selection)
 }
 
 func getPixelCoords(camera pixel.Matrix, spriteCenter pixel.Vec, mousePosition pixel.Vec) (x, y int) {
@@ -603,6 +680,7 @@ func drawToolWindow(currentTool *lmbTool, visible *bool) {
 	{
 		imgui.RadioButtonInt("Draw", (*int)(currentTool), int(toolDraw))
 		imgui.RadioButtonInt("Select", (*int)(currentTool), int(toolSelect))
+		imgui.RadioButtonInt("Move Selected Pixels", (*int)(currentTool), int(toolMoveSelected))
 	}
 	imgui.End()
 }
@@ -828,6 +906,320 @@ func textCentered(text string) {
 		Y: imgui.CursorPosY(),
 	})
 	imgui.Text(text)
+}
+
+func handleCopy(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
+	pixelSelection := pixel.Rect{
+		Min: selection.Min.Add(center),
+		Max: selection.Max.Add(center),
+	}
+	imageRect := image.Rect(
+		int(pixelSelection.Min.X),
+		img.Bounds().Dy()-int(pixelSelection.Min.Y),
+		int(pixelSelection.Max.X),
+		img.Bounds().Dy()-int(pixelSelection.Max.Y),
+	)
+	*pasteImg = copySubImage(img, imageRect)
+	*refreshSprites = true
+	*prevTool = *tool
+	*tool = toolMoveSelected
+}
+
+func handleCut(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
+	pixelSelection := pixel.Rect{
+		Min: selection.Min.Add(center),
+		Max: selection.Max.Add(center),
+	}
+	imageRect := image.Rect(
+		int(pixelSelection.Min.X),
+		img.Bounds().Dy()-int(pixelSelection.Min.Y),
+		int(pixelSelection.Max.X),
+		img.Bounds().Dy()-int(pixelSelection.Max.Y),
+	)
+	*pasteImg = cutSubImage(img, imageRect)
+	*refreshSprites = true
+	*prevTool = *tool
+	*tool = toolMoveSelected
+}
+
+func handlePaste(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
+	pixelSelection := pixel.Rect{
+		Min: selection.Min.Add(center),
+		Max: selection.Max.Add(center),
+	}
+	imageRect := image.Rect(
+		int(pixelSelection.Min.X),
+		img.Bounds().Dy()-int(pixelSelection.Min.Y),
+		int(pixelSelection.Max.X),
+		img.Bounds().Dy()-int(pixelSelection.Max.Y),
+	)
+	pasteSubImage(img, *pasteImg, imageRect)
+	*pasteImg = nil
+	*refreshSprites = true
+	*tool = *prevTool
+}
+
+func copySubImage(img image.Image, selection image.Rectangle) image.Image {
+	switch img.ColorModel() {
+	case hdrColors.NRGBA128FModel:
+		hdr, ok := img.(*hdrColors.NRGBA128FImage)
+		if !ok {
+			ddsImg, ok := img.(*dds.DDS)
+			if !ok {
+				break
+			}
+			hdr, ok = ddsImg.Image.(*hdrColors.NRGBA128FImage)
+			if !ok {
+				break
+			}
+		}
+		oldGray := hdr.Grayscale
+		hdr.SetGray(hdrColors.GraySettingNone)
+		toReturn := hdrColors.NewNRGBA128FImage(image.Rect(0, 0, selection.Dx(), selection.Dy()))
+		for y := selection.Min.Y; y < selection.Max.Y; y++ {
+			retY := y - selection.Min.Y
+			for x := selection.Min.X; x < selection.Max.X; x++ {
+				retX := x - selection.Min.X
+				toReturn.Set(retX, retY, hdr.NRGBA128FAt(x, y))
+			}
+		}
+		toReturn.SetGray(oldGray)
+		hdr.SetGray(oldGray)
+		return toReturn
+	case hdrColors.NRGBA128UModel:
+		hdr, ok := img.(*hdrColors.NRGBA128UImage)
+		if !ok {
+			ddsImg, ok := img.(*dds.DDS)
+			if !ok {
+				break
+			}
+			hdr, ok = ddsImg.Image.(*hdrColors.NRGBA128UImage)
+			if !ok {
+				break
+			}
+		}
+		oldGray := hdr.Grayscale
+		hdr.SetGray(hdrColors.GraySettingNone)
+		toReturn := hdrColors.NewNRGBA128UImage(image.Rect(0, 0, selection.Dx(), selection.Dy()))
+		for y := selection.Min.Y; y < selection.Max.Y; y++ {
+			retY := y - selection.Min.Y
+			for x := selection.Min.X; x < selection.Max.X; x++ {
+				retX := x - selection.Min.X
+				toReturn.Set(retX, retY, hdr.NRGBA128UAt(x, y))
+			}
+		}
+		toReturn.SetGray(oldGray)
+		hdr.SetGray(oldGray)
+		return toReturn
+	case hdrColors.NRGBA64FModel:
+		hdr, ok := img.(*hdrColors.NRGBA64FImage)
+		if !ok {
+			ddsImg, ok := img.(*dds.DDS)
+			if !ok {
+				break
+			}
+			hdr, ok = ddsImg.Image.(*hdrColors.NRGBA64FImage)
+			if !ok {
+				break
+			}
+		}
+		oldGray := hdr.Grayscale
+		hdr.SetGray(hdrColors.GraySettingNone)
+		toReturn := hdrColors.NewNRGBA64FImage(image.Rect(0, 0, selection.Dx(), selection.Dy()))
+		for y := selection.Min.Y; y < selection.Max.Y; y++ {
+			retY := y - selection.Min.Y
+			for x := selection.Min.X; x < selection.Max.X; x++ {
+				retX := x - selection.Min.X
+				toReturn.Set(retX, retY, hdr.NRGBA64FAt(x, y))
+			}
+		}
+		toReturn.SetGray(oldGray)
+		hdr.SetGray(oldGray)
+		return toReturn
+	}
+	return nil
+}
+
+func cutSubImage(img image.Image, selection image.Rectangle) image.Image {
+	switch img.ColorModel() {
+	case hdrColors.NRGBA128FModel:
+		hdr, ok := img.(*hdrColors.NRGBA128FImage)
+		if !ok {
+			ddsImg, ok := img.(*dds.DDS)
+			if !ok {
+				break
+			}
+			hdr, ok = ddsImg.Image.(*hdrColors.NRGBA128FImage)
+			if !ok {
+				break
+			}
+		}
+		oldGray := hdr.Grayscale
+		hdr.SetGray(hdrColors.GraySettingNone)
+		toReturn := hdrColors.NewNRGBA128FImage(image.Rect(0, 0, selection.Dx(), selection.Dy()))
+		for y := selection.Min.Y; y < selection.Max.Y; y++ {
+			retY := y - selection.Min.Y
+			for x := selection.Min.X; x < selection.Max.X; x++ {
+				retX := x - selection.Min.X
+				toReturn.Set(retX, retY, hdr.NRGBA128FAt(x, y))
+				hdr.Set(x, y, hdrColors.NRGBA128F{
+					R: 0,
+					G: 0,
+					B: 0,
+					A: 0,
+				})
+			}
+		}
+		toReturn.SetGray(oldGray)
+		hdr.SetGray(oldGray)
+		return toReturn
+	case hdrColors.NRGBA128UModel:
+		hdr, ok := img.(*hdrColors.NRGBA128UImage)
+		if !ok {
+			ddsImg, ok := img.(*dds.DDS)
+			if !ok {
+				break
+			}
+			hdr, ok = ddsImg.Image.(*hdrColors.NRGBA128UImage)
+			if !ok {
+				break
+			}
+		}
+		oldGray := hdr.Grayscale
+		hdr.SetGray(hdrColors.GraySettingNone)
+		toReturn := hdrColors.NewNRGBA128UImage(image.Rect(0, 0, selection.Dx(), selection.Dy()))
+		for y := selection.Min.Y; y < selection.Max.Y; y++ {
+			retY := y - selection.Min.Y
+			for x := selection.Min.X; x < selection.Max.X; x++ {
+				retX := x - selection.Min.X
+				toReturn.Set(retX, retY, hdr.NRGBA128UAt(x, y))
+				hdr.Set(x, y, hdrColors.NRGBA128U{
+					R: 0,
+					G: 0,
+					B: 0,
+					A: 0,
+				})
+			}
+		}
+		toReturn.SetGray(oldGray)
+		hdr.SetGray(oldGray)
+		return toReturn
+	case hdrColors.NRGBA64FModel:
+		hdr, ok := img.(*hdrColors.NRGBA64FImage)
+		if !ok {
+			ddsImg, ok := img.(*dds.DDS)
+			if !ok {
+				break
+			}
+			hdr, ok = ddsImg.Image.(*hdrColors.NRGBA64FImage)
+			if !ok {
+				break
+			}
+		}
+		oldGray := hdr.Grayscale
+		hdr.SetGray(hdrColors.GraySettingNone)
+		toReturn := hdrColors.NewNRGBA64FImage(image.Rect(0, 0, selection.Dx(), selection.Dy()))
+		for y := selection.Min.Y; y < selection.Max.Y; y++ {
+			retY := y - selection.Min.Y
+			for x := selection.Min.X; x < selection.Max.X; x++ {
+				retX := x - selection.Min.X
+				toReturn.Set(retX, retY, hdr.NRGBA64FAt(x, y))
+				hdr.Set(x, y, hdrColors.NRGBA64F{
+					R: 0,
+					G: 0,
+					B: 0,
+					A: 0,
+				})
+			}
+		}
+		toReturn.SetGray(oldGray)
+		hdr.SetGray(oldGray)
+		return toReturn
+	}
+	return nil
+}
+
+func pasteSubImage(img, pasteImg image.Image, selection image.Rectangle) {
+	switch img.ColorModel() {
+	case hdrColors.NRGBA128FModel:
+		hdr, ok := img.(*hdrColors.NRGBA128FImage)
+		if !ok {
+			ddsImg, ok := img.(*dds.DDS)
+			if !ok {
+				break
+			}
+			hdr, ok = ddsImg.Image.(*hdrColors.NRGBA128FImage)
+			if !ok {
+				break
+			}
+		}
+		pasteHdr, ok := pasteImg.(*hdrColors.NRGBA128FImage)
+		if !ok {
+			break
+		}
+		oldGray := pasteHdr.Grayscale
+		pasteHdr.SetGray(hdrColors.GraySettingNone)
+		for y := int(math.Max(0, float64(selection.Min.Y))); y < selection.Max.Y && y < img.Bounds().Max.Y; y++ {
+			retY := y - selection.Min.Y
+			for x := selection.Min.X; x < selection.Max.X; x++ {
+				retX := x - selection.Min.X
+				hdr.Set(x, y, pasteHdr.NRGBA128FAt(retX, retY))
+			}
+		}
+		pasteHdr.SetGray(oldGray)
+	case hdrColors.NRGBA128UModel:
+		hdr, ok := img.(*hdrColors.NRGBA128UImage)
+		if !ok {
+			ddsImg, ok := img.(*dds.DDS)
+			if !ok {
+				break
+			}
+			hdr, ok = ddsImg.Image.(*hdrColors.NRGBA128UImage)
+			if !ok {
+				break
+			}
+		}
+		pasteHdr, ok := pasteImg.(*hdrColors.NRGBA128UImage)
+		if !ok {
+			break
+		}
+		oldGray := pasteHdr.Grayscale
+		pasteHdr.SetGray(hdrColors.GraySettingNone)
+		for y := int(math.Max(0, float64(selection.Min.Y))); y < selection.Max.Y && y < img.Bounds().Max.Y; y++ {
+			retY := y - selection.Min.Y
+			for x := selection.Min.X; x < selection.Max.X; x++ {
+				retX := x - selection.Min.X
+				hdr.Set(x, y, pasteHdr.NRGBA128UAt(retX, retY))
+			}
+		}
+		pasteHdr.SetGray(oldGray)
+	case hdrColors.NRGBA64FModel:
+		hdr, ok := img.(*hdrColors.NRGBA64FImage)
+		if !ok {
+			ddsImg, ok := img.(*dds.DDS)
+			if !ok {
+				break
+			}
+			hdr, ok = ddsImg.Image.(*hdrColors.NRGBA64FImage)
+			if !ok {
+				break
+			}
+		}
+		pasteHdr, ok := pasteImg.(*hdrColors.NRGBA64FImage)
+		if !ok {
+			break
+		}
+		oldGray := pasteHdr.Grayscale
+		pasteHdr.SetGray(hdrColors.GraySettingNone)
+		for y := int(math.Max(0, float64(selection.Min.Y))); y < selection.Max.Y && y < img.Bounds().Max.Y; y++ {
+			retY := y - selection.Min.Y
+			for x := selection.Min.X; x < selection.Max.X; x++ {
+				retX := x - selection.Min.X
+				hdr.Set(x, y, pasteHdr.NRGBA64FAt(retX, retY))
+			}
+		}
+		pasteHdr.SetGray(oldGray)
+	}
 }
 
 func setHDRFromFloats(x, y int, currColor [4]float32, img image.Image) {

@@ -7,15 +7,17 @@ import (
 	"slices"
 	"time"
 
+	"github.com/gopxl/pixel/v2"
 	"github.com/ryanjsims/hd2-lut-editor/openexr"
 )
 
 type UndoRedoState struct {
-	Action   string
-	filename string
-	saved    bool
-	Img      []byte
-	Color    [4]float32
+	Action    string
+	filename  string
+	saved     bool
+	Img       []byte
+	Color     [4]float32
+	Selection pixel.Rect
 }
 
 type UndoRedoStack struct {
@@ -33,13 +35,14 @@ func (u *UndoRedoStack) Clear() {
 	u.RedoStack = make([]UndoRedoState, 0)
 }
 
-func (u *UndoRedoStack) Push(action, filename string, saved bool, img image.Image, currColor [4]float32) {
+func (u *UndoRedoStack) Push(action, filename string, saved bool, img image.Image, currColor [4]float32, selection pixel.Rect) {
 	undoState := UndoRedoState{
-		Action:   action,
-		filename: filename,
-		saved:    saved,
-		Img:      make([]byte, 0),
-		Color:    currColor,
+		Action:    action,
+		filename:  filename,
+		saved:     saved,
+		Img:       make([]byte, 0),
+		Color:     currColor,
+		Selection: selection,
 	}
 	if img != nil {
 		buf := &bytes.Buffer{}
@@ -49,11 +52,11 @@ func (u *UndoRedoStack) Push(action, filename string, saved bool, img image.Imag
 	u.UndoStack = append(u.UndoStack, undoState)
 }
 
-func (u *UndoRedoStack) DelayedPush(d time.Duration, action string, filename *string, saved *bool, img *image.Image, currColor *[4]float32) {
+func (u *UndoRedoStack) DelayedPush(d time.Duration, action string, filename *string, saved *bool, img *image.Image, currColor *[4]float32, selection *pixel.Rect) {
 	if u.timer != nil {
 		u.timer.Stop()
 	}
-	u.timer = time.AfterFunc(d, func() { u.Push(action, *filename, *saved, *img, *currColor) })
+	u.timer = time.AfterFunc(d, func() { u.Push(action, *filename, *saved, *img, *currColor, *selection) })
 }
 
 func (u *UndoRedoStack) Undo(index int) (*UndoRedoState, error) {
