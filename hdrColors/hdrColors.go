@@ -20,6 +20,15 @@ const (
 	GraySettingNoAlpha GraySetting = 5
 )
 
+type Grayable interface {
+	SetGray(gray GraySetting)
+}
+
+type HDRImage interface {
+	Pixels() []uint8
+	GetStride() int
+}
+
 type NRGBA128F struct {
 	R, G, B, A float32
 }
@@ -244,10 +253,6 @@ const (
 	nrgba64FPixelBytes  = 8
 )
 
-type Grayable interface {
-	SetGray(gray GraySetting)
-}
-
 // NRGBA128FImage is an in-memory image whose At method returns [openexr.RGBA32F] values.
 type NRGBA128FImage struct {
 	// Pix holds the image's pixels, in R, G, B, A order and big-endian format. The pixel at
@@ -260,6 +265,10 @@ type NRGBA128FImage struct {
 	// Grayscale mode
 	Grayscale GraySetting
 }
+
+func (p *NRGBA128FImage) Pixels() []uint8 { return p.Pix }
+
+func (p *NRGBA128FImage) GetStride() int { return p.Stride }
 
 func (p *NRGBA128FImage) ColorModel() color.Model { return NRGBA128FModel }
 
@@ -398,6 +407,10 @@ type NRGBA64FImage struct {
 	Grayscale GraySetting
 }
 
+func (p *NRGBA64FImage) Pixels() []uint8 { return p.Pix }
+
+func (p *NRGBA64FImage) GetStride() int { return p.Stride }
+
 func (p *NRGBA64FImage) ColorModel() color.Model { return NRGBA64FModel }
 
 func (p *NRGBA64FImage) Bounds() image.Rectangle { return p.Rect }
@@ -533,6 +546,10 @@ type NRGBA128UImage struct {
 	// Grayscale mode
 	Grayscale GraySetting
 }
+
+func (p *NRGBA128UImage) Pixels() []uint8 { return p.Pix }
+
+func (p *NRGBA128UImage) GetStride() int { return p.Stride }
 
 func (p *NRGBA128UImage) ColorModel() color.Model { return NRGBA128UModel }
 

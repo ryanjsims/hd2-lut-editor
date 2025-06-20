@@ -24,6 +24,7 @@ import (
 	"github.com/inkyblackness/imgui-go/v4"
 	"github.com/jwalton/go-supportscolor"
 	"github.com/ryanjsims/hd2-lut-editor/app"
+	"github.com/ryanjsims/hd2-lut-editor/clipboard"
 	"github.com/ryanjsims/hd2-lut-editor/dds"
 	"github.com/ryanjsims/hd2-lut-editor/hdrColors"
 	"github.com/ryanjsims/hd2-lut-editor/openexr"
@@ -65,6 +66,11 @@ func run() {
 			prt.Errorf("panic: %v\n%s", r, debug.Stack())
 		}
 	}()
+
+	err = clipboard.Init()
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	parser := argparse.NewParser(
 		"lut_editor",
@@ -289,7 +295,7 @@ func run() {
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			ui.JustPressed(pixel.KeyV) && img != nil {
 			undoStack.Push("Paste", fileName, saved, img, currColor, selection)
-			handlePaste(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tool)
+			handleImageCombine(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tool)
 			saved = false
 			pastePic = nil
 			pasteSprite = nil
@@ -398,7 +404,7 @@ func run() {
 			}
 			if tool != tempPrevTool && tempPrevTool == toolMoveSelected && selection != pixel.ZR {
 				undoStack.Push("End move pixels", fileName, saved, img, currColor, selection)
-				handlePaste(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tempPrevTool)
+				handleImageCombine(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tempPrevTool)
 				saved = false
 			}
 		}
@@ -942,7 +948,7 @@ func handleCut(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg
 	*tool = toolMoveSelected
 }
 
-func handlePaste(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
+func handleImageCombine(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
 	pixelSelection := pixel.Rect{
 		Min: selection.Min.Add(center),
 		Max: selection.Max.Add(center),
@@ -953,7 +959,7 @@ func handlePaste(selection pixel.Rect, center pixel.Vec, img image.Image, pasteI
 		int(pixelSelection.Max.X),
 		img.Bounds().Dy()-int(pixelSelection.Max.Y),
 	)
-	pasteSubImage(img, *pasteImg, imageRect)
+	combineSubImage(img, *pasteImg, imageRect)
 	*pasteImg = nil
 	*refreshSprites = true
 	*tool = *prevTool
@@ -1139,7 +1145,7 @@ func cutSubImage(img image.Image, selection image.Rectangle) image.Image {
 	return nil
 }
 
-func pasteSubImage(img, pasteImg image.Image, selection image.Rectangle) {
+func combineSubImage(img, pasteImg image.Image, selection image.Rectangle) {
 	switch img.ColorModel() {
 	case hdrColors.NRGBA128FModel:
 		hdr, ok := img.(*hdrColors.NRGBA128FImage)
