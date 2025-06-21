@@ -248,12 +248,10 @@ func run() {
 					selection = selection.Norm()
 					undoStack.DelayedPush(1*time.Second, "Change Selection", &fileName, &saved, &img, &currColor, &selection)
 				case toolMoveSelected:
-					clampedX := math.Max(0, math.Min(float64(x), float64(img.Bounds().Dx())))
-					clampedY := math.Max(0, math.Min(float64(y), float64(img.Bounds().Dy())))
 					if ui.JustPressed(pixel.MouseButtonLeft) {
-						selectionStart = fromPixelCoords(cam, sprite.Frame().Center(), int(clampedX), img.Bounds().Dy()-int(clampedY))
+						selectionStart = fromPixelCoords(cam, sprite.Frame().Center(), x, img.Bounds().Dy()-y)
 					}
-					selectionEnd = fromPixelCoords(cam, sprite.Frame().Center(), int(clampedX), img.Bounds().Dy()-int(clampedY))
+					selectionEnd = fromPixelCoords(cam, sprite.Frame().Center(), x, img.Bounds().Dy()-y)
 					selectionOffset = selectionEnd.Sub(selectionStart)
 					undoStack.DelayedPush(1*time.Second, "Move Selection", &fileName, &saved, &img, &currColor, &selection)
 				}
@@ -277,6 +275,33 @@ func run() {
 			handleRedo(prt, &undoStack, max(0, len(undoStack.RedoStack)-1), &img, &refreshSprites, &lastChannel, &currColor, &selection)
 		}
 
+		// New file shortcut
+		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) && ui.JustPressed(pixel.KeyN) {
+			response = types.MenuResponseImageNew
+		}
+
+		// Open file shortcut
+		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) && ui.JustPressed(pixel.KeyO) {
+			go openFile(prt, &fileName, &img, &refreshSprites, &lastChannel, currColor, selection, &undoStack)
+		}
+
+		// Save shortcut
+		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
+			ui.JustPressed(pixel.KeyS) && img != nil {
+			if fileName == "(new)" || len(fileName) == 0 {
+				go saveFileAs(prt, &fileName, img, &saved, currColor, selection, &undoStack)
+			} else {
+				go saveFile(prt, fileName, img, &saved, currColor, selection, &undoStack)
+			}
+		}
+
+		// Save As shortcut
+		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
+			(ui.Pressed(pixel.KeyLeftShift) || ui.Pressed(pixel.KeyRightShift)) &&
+			ui.JustPressed(pixel.KeyS) && img != nil {
+			go saveFileAs(prt, &fileName, img, &saved, currColor, selection, &undoStack)
+		}
+
 		// Copy shortcut
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			ui.JustPressed(pixel.KeyC) && img != nil && selection != pixel.ZR {
@@ -295,6 +320,7 @@ func run() {
 				prt.Errorf("failed to cut image: %v", err)
 			} else {
 				saved = false
+				refreshSprites = true
 			}
 		}
 
@@ -430,6 +456,7 @@ func run() {
 				prt.Errorf("failed to cut image: %v", err)
 			} else {
 				saved = false
+				refreshSprites = true
 			}
 		case types.MenuResponsePaste:
 			response = types.MenuResponseNone
@@ -1533,16 +1560,16 @@ func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible
 
 func showFileMenu(img image.Image) types.MenuResponse {
 	response := types.MenuResponseNone
-	if imgui.MenuItem("New") {
+	if imgui.MenuItemV("New", "ctrl-n", false, true) {
 		response = types.MenuResponseImageNew
 	}
-	if imgui.MenuItem("Open...") {
+	if imgui.MenuItemV("Open...", "ctrl-o", false, true) {
 		response = types.MenuResponseImageOpen
 	}
-	if imgui.MenuItemV("Save", "", false, img != nil) {
+	if imgui.MenuItemV("Save", "ctrl-s", false, img != nil) {
 		response = types.MenuResponseImageSave
 	}
-	if imgui.MenuItemV("Save As...", "", false, img != nil) {
+	if imgui.MenuItemV("Save As...", "ctrl-shift-s", false, img != nil) {
 		response = types.MenuResponseImageSaveAs
 	}
 	if imgui.MenuItem("Convert to DDS...") {
