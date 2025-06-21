@@ -239,7 +239,7 @@ func run() {
 					if selectionStart.X < mousePos.X {
 						clampedX = math.Max(0, math.Min(float64(x+1), float64(img.Bounds().Dx())))
 					}
-					if selectionStart.Y < mousePos.Y {
+					if selectionStart.Y > mousePos.Y {
 						clampedY = math.Max(0, math.Min(float64(y+1), float64(img.Bounds().Dy())))
 					}
 					selectionEnd = fromPixelCoords(cam, sprite.Frame().Center(), int(clampedX), img.Bounds().Dy()-int(clampedY))
@@ -344,6 +344,11 @@ func run() {
 			pasteImg = nil
 			pastePic = nil
 			pasteSprite = nil
+		}
+
+		// Clear selection
+		if tool == toolSelect && ui.JustPressed(pixel.KeyEscape) && img != nil {
+			selection = pixel.ZR
 		}
 
 		win.SetMatrix(cam)
