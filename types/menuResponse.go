@@ -15,6 +15,9 @@ const (
 	MenuResponseViewGrid         MenuResponse = iota
 	MenuResponseUndo             MenuResponse = iota
 	MenuResponseRedo             MenuResponse = iota
+	MenuResponseCopy             MenuResponse = iota
+	MenuResponseCut              MenuResponse = iota
+	MenuResponsePaste            MenuResponse = iota
 	MenuResponseBulkConvertToDDS MenuResponse = iota
 	MenuResponseBulkConvertToEXR MenuResponse = iota
 )

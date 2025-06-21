@@ -79,8 +79,8 @@ var (
 )
 
 var (
-	formatHDR  uint32
-	formatRect uint32
+	FormatHDR  uint32
+	FormatRect uint32
 )
 
 const (
@@ -149,7 +149,7 @@ func Init() error {
 	if r == 0 {
 		return err
 	}
-	formatHDR = uint32(r)
+	FormatHDR = uint32(r)
 
 	formatNameRect, err := syscall.BytePtrFromString("helldivers lut editor rectangle")
 	if err != nil {
@@ -161,7 +161,7 @@ func Init() error {
 	if r == 0 {
 		return err
 	}
-	formatRect = uint32(r)
+	FormatRect = uint32(r)
 	return nil
 }
 
@@ -227,7 +227,7 @@ func WriteHDR(img image.Image) error {
 	imgDataPtr := unsafe.Pointer(&data[0])
 	memMove.Call(p, uintptr(imgDataPtr), uintptr(len(data)))
 
-	v, _, err := setClipboardData.Call(uintptr(formatHDR), hMem)
+	v, _, err := setClipboardData.Call(uintptr(FormatHDR), hMem)
 	if v == 0 {
 		gFree.Call(hMem)
 		return fmt.Errorf("failed to write HDR image to clipboard: %w", err)
@@ -270,7 +270,7 @@ func WriteRect(rect pixel.Rect) error {
 	rectDataPtr := unsafe.Pointer(&buf[0])
 	memMove.Call(p, uintptr(rectDataPtr), uintptr(len(buf)))
 
-	v, _, err := setClipboardData.Call(uintptr(formatRect), hMem)
+	v, _, err := setClipboardData.Call(uintptr(FormatRect), hMem)
 	if v == 0 {
 		gFree.Call(hMem)
 		return fmt.Errorf("failed to write rectangle to clipboard: %w", err)
@@ -279,11 +279,22 @@ func WriteRect(rect pixel.Rect) error {
 	return nil
 }
 
+func HasFormat(format uint32) bool {
+	if format != FormatHDR && format != FormatRect {
+		return false
+	}
+	r, _, _ := isClipboardFormatAvailable.Call(uintptr(format))
+	if r == 0 {
+		return false
+	}
+	return true
+}
+
 func ReadHDR() (image.Image, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	r, _, _ := isClipboardFormatAvailable.Call(uintptr(formatHDR))
+	r, _, _ := isClipboardFormatAvailable.Call(uintptr(FormatHDR))
 	if r == 0 {
 		return nil, ErrUnavailable
 	}
@@ -297,7 +308,7 @@ func ReadHDR() (image.Image, error) {
 	}
 	defer closeClipboard.Call()
 
-	hMem, _, err := getClipboardData.Call(uintptr(formatHDR))
+	hMem, _, err := getClipboardData.Call(uintptr(FormatHDR))
 	if hMem == 0 {
 		return nil, err
 	}
@@ -334,7 +345,7 @@ func ReadRect() (*pixel.Rect, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	r, _, _ := isClipboardFormatAvailable.Call(uintptr(formatRect))
+	r, _, _ := isClipboardFormatAvailable.Call(uintptr(FormatRect))
 	if r == 0 {
 		return nil, ErrUnavailable
 	}
@@ -348,7 +359,7 @@ func ReadRect() (*pixel.Rect, error) {
 	}
 	defer closeClipboard.Call()
 
-	hMem, _, err := getClipboardData.Call(uintptr(formatRect))
+	hMem, _, err := getClipboardData.Call(uintptr(FormatRect))
 	if hMem == 0 {
 		return nil, err
 	}

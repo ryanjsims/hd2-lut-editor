@@ -282,7 +282,7 @@ func run() {
 			ui.JustPressed(pixel.KeyC) && img != nil && selection != pixel.ZR {
 			err := handleCopy(selection, sprite.Frame().Center(), img)
 			if err != nil {
-				prt.Errorf("failed to copy image: %w", err)
+				prt.Errorf("failed to copy image: %v", err)
 			}
 		}
 
@@ -292,7 +292,7 @@ func run() {
 			undoStack.Push("Cut", fileName, saved, img, currColor, selection)
 			err := handleCut(selection, sprite.Frame().Center(), img)
 			if err != nil {
-				prt.Errorf("failed to cut image: %w", err)
+				prt.Errorf("failed to cut image: %v", err)
 			} else {
 				saved = false
 			}
@@ -301,27 +301,18 @@ func run() {
 		// Paste shortcut
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			ui.JustPressed(pixel.KeyV) && img != nil {
-			pasteImg, err = clipboard.ReadHDR()
+			newPasteImg, newSelection, err := handlePaste(img.Bounds(), viewedChannel, sprite.Frame().Center())
 			if err == clipboard.ErrUnavailable {
 				// do nothing
 			} else if err != nil {
-				prt.Errorf("failed to paste image: %w", err)
+				prt.Errorf("failed to paste image: %v", err)
 			} else {
-				grayable := pasteImg.(hdrColors.Grayable)
-				grayable.SetGray(viewedChannel)
 				refreshSprites = true
 				prevTool = tool
 				tool = toolMoveSelected
-				storedSelection, err := clipboard.ReadRect()
-				if err == clipboard.ErrUnavailable {
-					// do nothing
-				} else if err != nil {
-					prt.Errorf("failed to paste selection box: %w", err)
-				} else {
-					imageRect := selectionToImageRect(*storedSelection, sprite.Frame().Center(), img.Bounds().Dy())
-					if imageRect.In(img.Bounds()) {
-						selection = *storedSelection
-					}
+				pasteImg = newPasteImg
+				if newSelection != nil {
+					selection = *newSelection
 				}
 			}
 		}
@@ -364,7 +355,7 @@ func run() {
 			pasteSprite.Draw(win, pixel.IM.Moved(selection.Moved(selectionOffset).Center()))
 		}
 
-		nextResponse, index := showMainMenuBar(img, channelsVisible, colorVisible, gridVisible, toolsVisible, &undoStack)
+		nextResponse, index := showMainMenuBar(img, channelsVisible, colorVisible, gridVisible, toolsVisible, &undoStack, selection)
 		if nextResponse != types.MenuResponseNone {
 			response = nextResponse
 		}
@@ -425,6 +416,37 @@ func run() {
 		case types.MenuResponseViewTools:
 			response = types.MenuResponseNone
 			toolsVisible = !toolsVisible
+		case types.MenuResponseCopy:
+			response = types.MenuResponseNone
+			err := handleCopy(selection, sprite.Frame().Center(), img)
+			if err != nil {
+				prt.Errorf("failed to copy image: %v", err)
+			}
+		case types.MenuResponseCut:
+			response = types.MenuResponseNone
+			undoStack.Push("Cut", fileName, saved, img, currColor, selection)
+			err := handleCut(selection, sprite.Frame().Center(), img)
+			if err != nil {
+				prt.Errorf("failed to cut image: %v", err)
+			} else {
+				saved = false
+			}
+		case types.MenuResponsePaste:
+			response = types.MenuResponseNone
+			newPasteImg, newSelection, err := handlePaste(img.Bounds(), viewedChannel, sprite.Frame().Center())
+			if err == clipboard.ErrUnavailable {
+				// do nothing
+			} else if err != nil {
+				prt.Errorf("failed to paste image: %v", err)
+			} else {
+				refreshSprites = true
+				prevTool = tool
+				tool = toolMoveSelected
+				pasteImg = newPasteImg
+				if newSelection != nil {
+					selection = *newSelection
+				}
+			}
 		case types.MenuResponseUndo:
 			response = types.MenuResponseNone
 			handleUndo(prt, &undoStack, index, &img, &refreshSprites, &lastChannel, &currColor, &selection)
@@ -834,8 +856,10 @@ func drawStatusBar(mousePos pixel.Vec, color [4]float32, tasks types.TaskMap, se
 		if imgui.BeginMenuBar() {
 			imgui.Textf("Mouse: (%.1f, %.1f) RGBA: (%3.3f, %3.3f, %3.3f, %3.3f)", mousePos.X, mousePos.Y, color[0], color[1], color[2], color[3])
 			imgui.Separator()
-			imgui.Textf("Selection: (%d, %d) -> (%d, %d)", int(selection.Min.X), int(selection.Min.Y), int(selection.Max.X), int(selection.Max.Y))
-			imgui.Separator()
+			if selection.Area() > 0 {
+				imgui.Textf("Selection: (%d, %d) -> (%d, %d)", int(selection.Min.X), int(selection.Min.Y), int(selection.Max.X), int(selection.Max.Y))
+				imgui.Separator()
+			}
 			var lastTask types.TaskID = types.TaskID(0xFFFFFFFF)
 			imgui.BeginGroup()
 			for idx, task := range tasks {
@@ -1005,6 +1029,24 @@ func handleCut(selection pixel.Rect, center pixel.Vec, img image.Image) error {
 		return err
 	}
 	return clipboard.WriteRect(selection)
+}
+
+func handlePaste(bounds image.Rectangle, viewedChannel hdrColors.GraySetting, center pixel.Vec) (image.Image, *pixel.Rect, error) {
+	pasteImg, err := clipboard.ReadHDR()
+	if err != nil {
+		return nil, nil, err
+	}
+	storedSelection, err := clipboard.ReadRect()
+	if err != nil {
+		return nil, nil, err
+	}
+	grayable := pasteImg.(hdrColors.Grayable)
+	grayable.SetGray(viewedChannel)
+	imageRect := selectionToImageRect(*storedSelection, center, bounds.Dy())
+	if imageRect.In(bounds) {
+		return pasteImg, storedSelection, nil
+	}
+	return pasteImg, nil, nil
 }
 
 func handleStartMoveSelection(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
@@ -1468,7 +1510,7 @@ func newImageDialog(width, height *int32, precision *int, windowSize imgui.Vec2,
 	return
 }
 
-func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible, toolsVisible bool, undoStack *types.UndoRedoStack) (types.MenuResponse, int) {
+func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible, toolsVisible bool, undoStack *types.UndoRedoStack, selection pixel.Rect) (types.MenuResponse, int) {
 	response := types.MenuResponseNone
 	index := -1
 	if imgui.BeginMainMenuBar() {
@@ -1477,7 +1519,7 @@ func showMainMenuBar(img image.Image, channelsVisible, colorVisible, gridVisible
 			imgui.EndMenu()
 		}
 		if imgui.BeginMenu("Edit") {
-			response, index = showEditMenu(undoStack)
+			response, index = showEditMenu(undoStack, selection)
 			imgui.EndMenu()
 		}
 		if imgui.BeginMenu("View") {
@@ -1512,7 +1554,16 @@ func showFileMenu(img image.Image) types.MenuResponse {
 	return response
 }
 
-func showEditMenu(undoStack *types.UndoRedoStack) (resp types.MenuResponse, index int) {
+func showEditMenu(undoStack *types.UndoRedoStack, selection pixel.Rect) (resp types.MenuResponse, index int) {
+	if imgui.MenuItemV("Copy", "ctrl-c", false, selection != pixel.ZR && selection.Area() > 0) {
+		resp = types.MenuResponseCopy
+	}
+	if imgui.MenuItemV("Cut", "ctrl-x", false, selection != pixel.ZR && selection.Area() > 0) {
+		resp = types.MenuResponseCut
+	}
+	if imgui.MenuItemV("Paste", "ctrl-v", false, clipboard.HasFormat(clipboard.FormatHDR)) {
+		resp = types.MenuResponsePaste
+	}
 	if imgui.MenuItemV("Undo", "ctrl-z", false, len(undoStack.UndoStack) > 0) {
 		resp = types.MenuResponseUndo
 		index = max(len(undoStack.UndoStack)-2, 0)
