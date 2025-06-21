@@ -280,23 +280,68 @@ func run() {
 		// Copy shortcut
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			ui.JustPressed(pixel.KeyC) && img != nil && selection != pixel.ZR {
-			handleCopy(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tool)
+			err := handleCopy(selection, sprite.Frame().Center(), img)
+			if err != nil {
+				prt.Errorf("failed to copy image: %w", err)
+			}
 		}
 
 		// Cut shortcut
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			ui.JustPressed(pixel.KeyX) && img != nil && selection != pixel.ZR {
 			undoStack.Push("Cut", fileName, saved, img, currColor, selection)
-			handleCut(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tool)
-			saved = false
+			err := handleCut(selection, sprite.Frame().Center(), img)
+			if err != nil {
+				prt.Errorf("failed to cut image: %w", err)
+			} else {
+				saved = false
+			}
 		}
 
 		// Paste shortcut
 		if (ui.Pressed(pixel.KeyLeftControl) || ui.Pressed(pixel.KeyRightControl)) &&
 			ui.JustPressed(pixel.KeyV) && img != nil {
-			undoStack.Push("Paste", fileName, saved, img, currColor, selection)
-			handleImageCombine(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tool)
+			pasteImg, err = clipboard.ReadHDR()
+			if err == clipboard.ErrUnavailable {
+				// do nothing
+			} else if err != nil {
+				prt.Errorf("failed to paste image: %w", err)
+			} else {
+				grayable := pasteImg.(hdrColors.Grayable)
+				grayable.SetGray(viewedChannel)
+				refreshSprites = true
+				prevTool = tool
+				tool = toolMoveSelected
+				storedSelection, err := clipboard.ReadRect()
+				if err == clipboard.ErrUnavailable {
+					// do nothing
+				} else if err != nil {
+					prt.Errorf("failed to paste selection box: %w", err)
+				} else {
+					imageRect := selectionToImageRect(*storedSelection, sprite.Frame().Center(), img.Bounds().Dy())
+					if imageRect.In(img.Bounds()) {
+						selection = *storedSelection
+					}
+				}
+			}
+		}
+
+		// Finish moving pixels shortcut
+		if tool == toolMoveSelected && ui.JustPressed(pixel.KeyEnter) && img != nil && pasteImg != nil {
+			undoStack.Push("Finish pixels", fileName, saved, img, currColor, selection)
+			handleImageCombine(selection, sprite.Frame().Center(), img, pasteImg)
+			refreshSprites = true
+			tool = prevTool
 			saved = false
+			pasteImg = nil
+			pastePic = nil
+			pasteSprite = nil
+		}
+
+		// Cancel moving pixels shortcut
+		if tool == toolMoveSelected && ui.JustPressed(pixel.KeyEscape) && img != nil && pasteImg != nil {
+			tool = prevTool
+			pasteImg = nil
 			pastePic = nil
 			pasteSprite = nil
 		}
@@ -399,12 +444,14 @@ func run() {
 			drawToolWindow(&tool, &toolsVisible)
 			if tool != tempPrevTool && tool == toolMoveSelected && selection != pixel.ZR {
 				undoStack.Push("Start move pixels", fileName, saved, img, currColor, selection)
-				handleCut(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tempPrevTool)
+				handleStartMoveSelection(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tempPrevTool)
 				saved = false
 			}
 			if tool != tempPrevTool && tempPrevTool == toolMoveSelected && selection != pixel.ZR {
 				undoStack.Push("End move pixels", fileName, saved, img, currColor, selection)
-				handleImageCombine(selection, sprite.Frame().Center(), img, &pasteImg, &refreshSprites, &prevTool, &tempPrevTool)
+				handleImageCombine(selection, sprite.Frame().Center(), img, pasteImg)
+				pasteImg = nil
+				refreshSprites = true
 				saved = false
 			}
 		}
@@ -914,55 +961,58 @@ func textCentered(text string) {
 	imgui.Text(text)
 }
 
-func handleCopy(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
+func selectionToImageRect(selection pixel.Rect, center pixel.Vec, height int) image.Rectangle {
 	pixelSelection := pixel.Rect{
 		Min: selection.Min.Add(center),
 		Max: selection.Max.Add(center),
 	}
-	imageRect := image.Rect(
+	return image.Rect(
 		int(pixelSelection.Min.X),
-		img.Bounds().Dy()-int(pixelSelection.Min.Y),
+		height-int(pixelSelection.Min.Y),
 		int(pixelSelection.Max.X),
-		img.Bounds().Dy()-int(pixelSelection.Max.Y),
+		height-int(pixelSelection.Max.Y),
 	)
-	*pasteImg = copySubImage(img, imageRect)
-	*refreshSprites = true
-	*prevTool = *tool
-	*tool = toolMoveSelected
 }
 
-func handleCut(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
+func imageToSelectionRect(rect image.Rectangle, center pixel.Vec, height int) pixel.Rect {
 	pixelSelection := pixel.Rect{
-		Min: selection.Min.Add(center),
-		Max: selection.Max.Add(center),
+		Min: pixel.V(float64(rect.Min.X), float64(height-rect.Min.Y)),
+		Max: pixel.V(float64(rect.Max.X), float64(height-rect.Max.Y)),
 	}
-	imageRect := image.Rect(
-		int(pixelSelection.Min.X),
-		img.Bounds().Dy()-int(pixelSelection.Min.Y),
-		int(pixelSelection.Max.X),
-		img.Bounds().Dy()-int(pixelSelection.Max.Y),
-	)
+	return pixelSelection.Moved(center.Scaled(-1))
+}
+
+func handleCopy(selection pixel.Rect, center pixel.Vec, img image.Image) error {
+	imageRect := selectionToImageRect(selection, center, img.Bounds().Dy())
+	copiedImg := copySubImage(img, imageRect)
+	err := clipboard.WriteHDR(copiedImg)
+	if err != nil {
+		return err
+	}
+	return clipboard.WriteRect(selection)
+}
+
+func handleCut(selection pixel.Rect, center pixel.Vec, img image.Image) error {
+	imageRect := selectionToImageRect(selection, center, img.Bounds().Dy())
+	cutImg := cutSubImage(img, imageRect)
+	err := clipboard.WriteHDR(cutImg)
+	if err != nil {
+		return err
+	}
+	return clipboard.WriteRect(selection)
+}
+
+func handleStartMoveSelection(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
+	imageRect := selectionToImageRect(selection, center, img.Bounds().Dy())
 	*pasteImg = cutSubImage(img, imageRect)
 	*refreshSprites = true
 	*prevTool = *tool
 	*tool = toolMoveSelected
 }
 
-func handleImageCombine(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg *image.Image, refreshSprites *bool, prevTool, tool *lmbTool) {
-	pixelSelection := pixel.Rect{
-		Min: selection.Min.Add(center),
-		Max: selection.Max.Add(center),
-	}
-	imageRect := image.Rect(
-		int(pixelSelection.Min.X),
-		img.Bounds().Dy()-int(pixelSelection.Min.Y),
-		int(pixelSelection.Max.X),
-		img.Bounds().Dy()-int(pixelSelection.Max.Y),
-	)
-	combineSubImage(img, *pasteImg, imageRect)
-	*pasteImg = nil
-	*refreshSprites = true
-	*tool = *prevTool
+func handleImageCombine(selection pixel.Rect, center pixel.Vec, img image.Image, pasteImg image.Image) {
+	imageRect := selectionToImageRect(selection, center, img.Bounds().Dy())
+	combineSubImage(img, pasteImg, imageRect)
 }
 
 func copySubImage(img image.Image, selection image.Rectangle) image.Image {

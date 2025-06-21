@@ -1,7 +1,6 @@
 package clipboard
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -98,11 +97,45 @@ var (
 	ErrUnavailable = errors.New("clipboard unavailable")
 )
 
+type Vector struct {
+	X, Y int32
+}
+
+type Rectangle struct {
+	Min, Max Vector
+}
+
+func fromImageRect(imgRect image.Rectangle) Rectangle {
+	return Rectangle{
+		Min: Vector{
+			X: int32(imgRect.Min.X),
+			Y: int32(imgRect.Min.Y),
+		},
+		Max: Vector{
+			X: int32(imgRect.Max.X),
+			Y: int32(imgRect.Max.Y),
+		},
+	}
+}
+
+func toImageRect(rect Rectangle) image.Rectangle {
+	return image.Rectangle{
+		Min: image.Point{
+			X: int(rect.Min.X),
+			Y: int(rect.Min.Y),
+		},
+		Max: image.Point{
+			X: int(rect.Max.X),
+			Y: int(rect.Max.Y),
+		},
+	}
+}
+
 type HDRHeader struct {
-	format     uint32
-	bounds     image.Rectangle
-	stride     int
-	byteLength int
+	Format     uint32
+	Bounds     Rectangle
+	Stride     uint32
+	ByteLength uint32
 }
 
 func Init() error {
@@ -157,24 +190,30 @@ func WriteHDR(img image.Image) error {
 	}
 	defer closeClipboard.Call()
 
-	var buf bytes.Buffer
+	data := make([]byte, 0)
 	var header HDRHeader
 
 	switch img.ColorModel() {
 	case hdrColors.NRGBA64FModel:
-		header.format = imgFormatFloat16
+		header.Format = imgFormatFloat16
 	case hdrColors.NRGBA128FModel:
-		header.format = imgFormatFloat32
+		header.Format = imgFormatFloat32
 	case hdrColors.NRGBA128UModel:
-		header.format = imgFormatUInt32
+		header.Format = imgFormatUInt32
 	}
-	header.bounds = img.Bounds()
-	header.stride = hdrImg.GetStride()
-	header.byteLength = len(hdrImg.Pixels())
-	binary.Write(&buf, binary.LittleEndian, header)
-	binary.Write(&buf, binary.LittleEndian, hdrImg.Pixels())
+	header.Bounds = fromImageRect(img.Bounds())
+	header.Stride = uint32(hdrImg.GetStride())
+	header.ByteLength = uint32(len(hdrImg.Pixels()))
+	data, err := binary.Append(data, binary.LittleEndian, header)
+	if err != nil {
+		return fmt.Errorf("failed to append header to data: %w", err)
+	}
+	data, err = binary.Append(data, binary.LittleEndian, hdrImg.Pixels())
+	if err != nil {
+		return fmt.Errorf("failed to append pixels to data: %w", err)
+	}
 
-	hMem, _, err := gAlloc.Call(gMemMoveable, uintptr(buf.Len()))
+	hMem, _, err := gAlloc.Call(gMemMoveable, uintptr(len(data)))
 	if hMem == 0 {
 		return fmt.Errorf("failed to alloc global memory: %w", err)
 	}
@@ -185,8 +224,8 @@ func WriteHDR(img image.Image) error {
 	}
 	defer gUnlock.Call(hMem)
 
-	imgDataPtr := unsafe.Pointer(&buf.Bytes()[0])
-	memMove.Call(p, uintptr(imgDataPtr), uintptr(buf.Len()))
+	imgDataPtr := unsafe.Pointer(&data[0])
+	memMove.Call(p, uintptr(imgDataPtr), uintptr(len(data)))
 
 	v, _, err := setClipboardData.Call(uintptr(formatHDR), hMem)
 	if v == 0 {
@@ -210,11 +249,14 @@ func WriteRect(rect pixel.Rect) error {
 	}
 	defer closeClipboard.Call()
 
-	var buf bytes.Buffer
+	buf := make([]byte, 0)
 
-	binary.Write(&buf, binary.LittleEndian, rect)
+	buf, err := binary.Append(buf, binary.LittleEndian, rect)
+	if err != nil {
+		return fmt.Errorf("failed to append rect to buffer: %w", err)
+	}
 
-	hMem, _, err := gAlloc.Call(gMemMoveable, uintptr(buf.Len()))
+	hMem, _, err := gAlloc.Call(gMemMoveable, uintptr(len(buf)))
 	if hMem == 0 {
 		return fmt.Errorf("failed to alloc global memory: %w", err)
 	}
@@ -225,8 +267,8 @@ func WriteRect(rect pixel.Rect) error {
 	}
 	defer gUnlock.Call(hMem)
 
-	rectDataPtr := unsafe.Pointer(&buf.Bytes()[0])
-	memMove.Call(p, uintptr(rectDataPtr), uintptr(buf.Len()))
+	rectDataPtr := unsafe.Pointer(&buf[0])
+	memMove.Call(p, uintptr(rectDataPtr), uintptr(len(buf)))
 
 	v, _, err := setClipboardData.Call(uintptr(formatRect), hMem)
 	if v == 0 {
@@ -267,21 +309,21 @@ func ReadHDR() (image.Image, error) {
 
 	ptr := unsafe.Pointer(p)
 	data := (*HDRHeader)(ptr)
-	pxPtr := unsafe.Pointer(p + unsafe.Sizeof(data))
-	pixels := unsafe.Slice((*uint8)(pxPtr), data.byteLength)
+	pxPtr := unsafe.Pointer(p + unsafe.Sizeof(*data))
+	pixels := unsafe.Slice((*uint8)(pxPtr), data.ByteLength)
 
 	var img image.Image
-	switch data.format {
+	switch data.Format {
 	case imgFormatFloat16:
-		hdrImg := hdrColors.NewNRGBA64FImage(data.bounds)
+		hdrImg := hdrColors.NewNRGBA64FImage(toImageRect(data.Bounds))
 		copy(hdrImg.Pix, pixels)
 		img = hdrImg
 	case imgFormatFloat32:
-		hdrImg := hdrColors.NewNRGBA128FImage(data.bounds)
+		hdrImg := hdrColors.NewNRGBA128FImage(toImageRect(data.Bounds))
 		copy(hdrImg.Pix, pixels)
 		img = hdrImg
 	case imgFormatUInt32:
-		hdrImg := hdrColors.NewNRGBA128UImage(data.bounds)
+		hdrImg := hdrColors.NewNRGBA128UImage(toImageRect(data.Bounds))
 		copy(hdrImg.Pix, pixels)
 		img = hdrImg
 	}
@@ -292,7 +334,7 @@ func ReadRect() (*pixel.Rect, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	r, _, _ := isClipboardFormatAvailable.Call(uintptr(formatHDR))
+	r, _, _ := isClipboardFormatAvailable.Call(uintptr(formatRect))
 	if r == 0 {
 		return nil, ErrUnavailable
 	}
@@ -306,7 +348,7 @@ func ReadRect() (*pixel.Rect, error) {
 	}
 	defer closeClipboard.Call()
 
-	hMem, _, err := getClipboardData.Call(uintptr(formatHDR))
+	hMem, _, err := getClipboardData.Call(uintptr(formatRect))
 	if hMem == 0 {
 		return nil, err
 	}
@@ -317,10 +359,11 @@ func ReadRect() (*pixel.Rect, error) {
 	defer gUnlock.Call(hMem)
 
 	ptr := unsafe.Pointer(p)
-	data := (*pixel.Rect)(ptr)
+	data := unsafe.Slice((*byte)(ptr), unsafe.Sizeof(pixel.Rect{}))
 
 	// Copy the data from the global memory
-	toReturn := *data
+	var toReturn pixel.Rect
+	binary.Decode(data, binary.LittleEndian, &toReturn)
 
 	return &toReturn, nil
 }
